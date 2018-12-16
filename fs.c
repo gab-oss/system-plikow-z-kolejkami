@@ -5,7 +5,8 @@
 #include<sys/stat.h>
 
 #define MAX_FILES     16
-#define NAME_SIZE   	16
+#define NAME_SIZE   	100
+#define INFO_SIZE			5
 
 int capacity;
 int freeMemory;
@@ -15,7 +16,10 @@ char FSAbsolutePath[200];
 char fileNames[MAX_FILES][NAME_SIZE];
 //0 - position in FS
 //1 - filesize
-char fileInfos[MAX_FILES][2];
+//2 - is directory
+//3 - read allowed
+//4 - write allowed
+char fileInfos[MAX_FILES][5];
 
 //list of free memory blocks
 struct inodeFree
@@ -28,15 +32,16 @@ struct inodeFree
 void sortDescriptors();
 void updateMemory();
 
+//TODO: concurrency
 void createFS(char name[], int size)
 {
   strcpy(FSAbsolutePath, name);
 	//check if enough space for metadata
-  if(size < sizeof(int)+MAX_FILES*(2+NAME_SIZE))
+  if(size < sizeof(int)+MAX_FILES*(5+NAME_SIZE))
 		exit(1);
 
   capacity = size;
-  freeMemory = capacity - (sizeof(int)+MAX_FILES*(2+NAME_SIZE));
+  freeMemory = capacity - (sizeof(int)+MAX_FILES*(5+NAME_SIZE));
   
   FILE *file = fopen(name, "w");
   
@@ -52,6 +57,7 @@ void createFS(char name[], int size)
   fclose(file);
 }
 
+//TODO: concurrency
 void readFS(char name[])
 {
   strcpy(FSAbsolutePath, name);
@@ -61,7 +67,7 @@ void readFS(char name[])
   
 	//read FS capacity from metadata and calculate metadata size
   fread(&capacity, sizeof(int), 1, file);
-  freeMemory = capacity - (sizeof(int)+MAX_FILES*(2+NAME_SIZE));
+  freeMemory = capacity - (sizeof(int)+MAX_FILES*(5+NAME_SIZE));
   
 	//read inode table
 	fileCount = 0;
@@ -70,7 +76,7 @@ void readFS(char name[])
 		//read filename
     fread(&fileNames[i][0], sizeof(char), NAME_SIZE, file);
     //read position and size
-		fread(&fileInfos[i][0], sizeof(char), 2, file);
+		fread(&fileInfos[i][0], sizeof(char), 5, file);
 
 		freeMemory -= fileInfos[i][1];
 		//check file exitence
@@ -102,14 +108,14 @@ void updateMemory()
   if(fileInfos[0][1] == 0)
   { 
 		//there are no files                                                                                                                          
-    head.base = sizeof(int)+MAX_FILES*(2+NAME_SIZE)+1;
+    head.base = sizeof(int)+MAX_FILES*(5+NAME_SIZE)+1;
     head.size = capacity - head.base + 1;
     head.next = NULL;
   	return;
   }
   else
   {
-  	if(fileInfos[0][0] == sizeof(int)+MAX_FILES*(2+NAME_SIZE)+1)
+  	if(fileInfos[0][0] == sizeof(int)+MAX_FILES*(5+NAME_SIZE)+1)
   	{
 			//first file is just after metadata
   	  while(i < fileCount-1 && fileInfos[i][0] + fileInfos[i][1] == fileInfos[i+1][0])
@@ -136,7 +142,7 @@ void updateMemory()
   	else
   	{
 			//there is free memory between metadata and first file
-  	  head.base = sizeof(int)+MAX_FILES*(2+NAME_SIZE)+1;
+  	  head.base = sizeof(int)+MAX_FILES*(5+NAME_SIZE)+1;
   	  head.size = fileInfos[0][0] - head.base;
   	}
   }
@@ -190,10 +196,11 @@ void showMem()
 	while(temp != NULL);
 }
 
+//TODO: concurrency
 //sort files descriptors according to thier position in FS
 void sortDescriptors()
 {
-  char tempI[2];
+  char tempI[5];
   char tempN[NAME_SIZE];
   for(int i = 0; i < fileCount; i++)
   {
@@ -205,9 +212,9 @@ void sortDescriptors()
 					min = j;
   	}
 
-  	strncpy(tempI, fileInfos[i], 2);
-  	strncpy(fileInfos[i], fileInfos[min], 2);
-  	strncpy(fileInfos[min], tempI, 2);
+  	strncpy(tempI, fileInfos[i], 5);
+  	strncpy(fileInfos[i], fileInfos[min], 5);
+  	strncpy(fileInfos[min], tempI, 5);
   	
   	strncpy(tempN, fileNames[i], NAME_SIZE);
   	strncpy(fileNames[i], fileNames[min], NAME_SIZE);
@@ -215,6 +222,7 @@ void sortDescriptors()
   }
 }
 
+//TODO: concurrency
 void defragment()
 {
 	FILE *FS = fopen(FSAbsolutePath, "r+");
@@ -229,7 +237,7 @@ void defragment()
 		fread(buffer, sizeof(char), fileInfos[0][1], FS);
 		
 		//move first file to after metadata
-  	fileInfos[0][0] = sizeof(int)+MAX_FILES*(2+NAME_SIZE)+1;
+  	fileInfos[0][0] = sizeof(int)+MAX_FILES*(5+NAME_SIZE)+1;
 		fseek(FS, fileInfos[0][0], SEEK_SET);
 		fwrite(buffer, sizeof(char), fileInfos[0][1], FS);
   }
@@ -250,13 +258,14 @@ void defragment()
 	for(int i = 0; i < MAX_FILES; i++)
   {
     fwrite(&fileNames[i][0], sizeof(char), NAME_SIZE, FS);
-    fwrite(&fileInfos[i][0], sizeof(char), 2, FS);
+    fwrite(&fileInfos[i][0], sizeof(char), 5, FS);
   }
 	
 	fclose(FS);
 	updateMemory();
 }
 
+//deprecated
 void writeFileToFS(char name[])
 {
 	if(strlen(name) > NAME_SIZE) return;
@@ -313,13 +322,14 @@ void writeFileToFS(char name[])
 	for(int i = 0; i < MAX_FILES; i++)
   {
     fwrite(&fileNames[i][0], sizeof(char), NAME_SIZE, FS);
-    fwrite(&fileInfos[i][0], sizeof(char), 2, FS);
+    fwrite(&fileInfos[i][0], sizeof(char), 5, FS);
   }
 	
 	fclose(file);
 	fclose(FS);
 }
 
+//deprecated
 //write file from FS to host
 void writeFileFromFS(char name[])
 {
@@ -349,7 +359,13 @@ void writeFileFromFS(char name[])
 	}
 }
 
-void deleteFile(char name[])
+int simplefs_open(char* name, int mode)
+{
+	//TODO
+}
+
+//TODO: concurrency and return status
+int simplefs_unlink(char* name)
 {
 	for(int i = 0; i < MAX_FILES; i++)
 	{
@@ -359,7 +375,7 @@ void deleteFile(char name[])
 		  fileCount--;
 		  freeMemory += fileInfos[i][1];
 		  memset(fileNames[i], 0, NAME_SIZE);
-		  memset(fileInfos[i], 0, 2);
+		  memset(fileInfos[i], 0, 5);
 		  
 		  sortDescriptors();
 		  updateMemory();
@@ -374,13 +390,38 @@ void deleteFile(char name[])
 			for(int i = 0; i < MAX_FILES; i++)
   		{
     		fwrite(&fileNames[i][0], sizeof(char), NAME_SIZE, FS);
-    		fwrite(&fileInfos[i][0], sizeof(char), 2, FS);
+    		fwrite(&fileInfos[i][0], sizeof(char), 5, FS);
   		}
 	
 			fclose(FS);
 			return;
 		}
 	}
+}
+
+int simplefs_mkdir(char* name)
+{
+	//TODO
+}
+
+int simplefs_creat(char* name int mode)
+{
+	//TODO
+}
+
+int simplefs_read(int fd, char* buf, int len)
+{
+	//TODO
+}
+
+int simplefs_write(int fd, char* buf, int len)
+{
+	//TODO
+}
+
+int simplefs_lseek(int fd, int whence, int offset)
+{
+	//TODO
 }
 
 int main(int argc, char** argv)
