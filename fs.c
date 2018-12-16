@@ -26,7 +26,7 @@ struct inodeFree
 }head;
 
 void sortDescriptors();
-void updateMem();
+void updateMemory();
 
 void createFS(char name[], int size)
 {
@@ -77,7 +77,7 @@ void readFS(char name[])
     if(fileInfos[i][1] != 0) 
 			fileCount++;
   }
-  updateMem();
+  updateMemory();
   fclose(file);
 }
 
@@ -95,7 +95,7 @@ void showDir()
   }
 }
 
-void updateMem()
+void updateMemory()
 {
   sortDescriptors();
   int i = 0;
@@ -218,20 +218,24 @@ void sortDescriptors()
 void defragment()
 {
 	FILE *FS = fopen(FSAbsolutePath, "r+");
-  if(FS == NULL) exit(1);
+  if(FS == NULL) 
+		exit(1);
 	
   if(fileCount > 0)
   {
+		//write first file to buffer
     char *buffer = malloc(fileInfos[0][1]);
 		fseek(FS, fileInfos[0][0], SEEK_SET);
 		fread(buffer, sizeof(char), fileInfos[0][1], FS);
 		
+		//move first file to after metadata
   	fileInfos[0][0] = sizeof(int)+MAX_FILES*(2+NAME_SIZE)+1;
 		fseek(FS, fileInfos[0][0], SEEK_SET);
 		fwrite(buffer, sizeof(char), fileInfos[0][1], FS);
   }
 	for(int i = 1; i < fileCount; i++)
 	{
+		//move file to after previous one
 		char *buffer = malloc(fileInfos[i][1]);
 		fseek(FS, fileInfos[i][0], SEEK_SET);
 		fread(buffer, sizeof(char), fileInfos[i][1], FS);
@@ -240,7 +244,8 @@ void defragment()
 		fseek(FS, fileInfos[i][0], SEEK_SET);
 		fwrite(buffer, sizeof(char), fileInfos[i][1], FS);
 	}
-		
+
+	//update metadata	
 	fseek(FS, sizeof(int), SEEK_SET);
 	for(int i = 0; i < MAX_FILES; i++)
   {
@@ -249,7 +254,7 @@ void defragment()
   }
 	
 	fclose(FS);
-	updateMem();
+	updateMemory();
 }
 
 void writeFileToFS(char name[])
@@ -262,11 +267,13 @@ void writeFileToFS(char name[])
 	if(stat(name, &st) != 0) return;
 	if(st.st_size > freeMemory) return;
 	
+	//check if file already exists
 	for(int i = 0; i < fileCount; i++)
 	{
 	  if(strcmp(name, fileNames[i]) == 0) return;
 	}
  	
+	//find free memory for file
  	struct inodeFree *temp = &head;
 	while(temp != NULL)
 	{
@@ -285,10 +292,12 @@ void writeFileToFS(char name[])
  	FILE *FS = fopen(FSAbsolutePath, "r+");
   if(FS == NULL) exit(1);
 	
+	//file metadata
 	strcpy(fileNames[fileCount], name);
 	fileInfos[fileCount][0] = temp->base;
 	fileInfos[fileCount][1] = st.st_size;
 	
+	//write file to FS
 	char *buffer = malloc(st.st_size);
 	fread(buffer, sizeof(char), st.st_size, file);
 	fseek(FS, temp->base, SEEK_SET);
@@ -296,9 +305,10 @@ void writeFileToFS(char name[])
 	
 	fileCount++;
 	sortDescriptors();
-	updateMem();
+	updateMemory();
 	freeMemory -= st.st_size;
 	
+	//update metadata
 	fseek(FS, sizeof(int), SEEK_SET);
 	for(int i = 0; i < MAX_FILES; i++)
   {
@@ -310,9 +320,11 @@ void writeFileToFS(char name[])
 	fclose(FS);
 }
 
+//write file from FS to host
 void writeFileFromFS(char name[])
 {
-	if(strlen(name) > NAME_SIZE) return;
+	if(strlen(name) > NAME_SIZE) 
+		return;
 	readFS(FSAbsolutePath);
 	
 	for(int i = 0; i < fileCount; i++)
@@ -343,17 +355,21 @@ void deleteFile(char name[])
 	{
 		if(strcmp(name, fileNames[i]) == 0)
 		{
+			//clear filename and info of deleted file
 		  fileCount--;
 		  freeMemory += fileInfos[i][1];
 		  memset(fileNames[i], 0, NAME_SIZE);
 		  memset(fileInfos[i], 0, 2);
 		  
 		  sortDescriptors();
-		  updateMem();
+		  updateMemory();
 		  
+			//save changes to FS
 		  FILE *FS = fopen(FSAbsolutePath, "r+");
-  		if(FS == NULL) exit(1);
+  		if(FS == NULL) 
+				exit(1);
 		  
+			//update metadata
 		  fseek(FS, sizeof(int), SEEK_SET);
 			for(int i = 0; i < MAX_FILES; i++)
   		{
