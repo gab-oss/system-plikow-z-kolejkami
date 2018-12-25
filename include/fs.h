@@ -2,15 +2,19 @@
 #define FS_H
 
 // Global constants
-#define MAX_FILES       16
-#define NAME_SIZE       100
-#define INFO_SIZE       5
+#define MAX_FILES               16
+#define NAME_SIZE               100
+#define INFO_SIZE               5
 
 // Argument flags
-#define FS_RDONLY       1	// 001 - Read only
-#define FS_WRONLY       2	// 010 - Write only
-#define FS_RDWR         3	// 011 - Read and write
-#define FS_CREAT        4	// 100 - Crate file
+#define FS_RDONLY               1	// 001 - Read only
+#define FS_WRONLY               2	// 010 - Write only
+#define FS_RDWR                 3	// 011 - Read and write
+#define FS_CREAT                4	// 100 - Crate file
+
+// Error codes
+#define SFS_LOCK_MUTEX_ERROR    -1
+#define SFS_UNLOCK_MUTEX_ERROR  -2
 
 
 int simplefs_open(char* name, int mode);

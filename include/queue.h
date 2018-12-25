@@ -7,6 +7,7 @@
 #define SFSQ_MSGGET_ERROR       -1
 #define SFSQ_MSGRCV_ERROR       -2
 #define SFSQ_MSGSND_ERROR       -3
+#define SFSQ_MSGCREAT_ERROR     -4
 
 /*
  * Message type for queue messages.
