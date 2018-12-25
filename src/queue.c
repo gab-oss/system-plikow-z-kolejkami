@@ -2,14 +2,14 @@
 #include <sys/ipc.h>
 #include <sys/msg.h>
 
-#include "queue.h"
+#include "../include/queue.h"
 
 int mutex_lock(int fd) {
     int qid = msgget(SFS_QUEUE_KEY, 0666);
     if(qid < 0) {
         return SFSQ_MSGGET_ERROR;
     }
-    sfs_msg message;
+    struct sfs_msg message;
     ssize_t ret = msgrcv(qid, &message, sizeof(message), fd, MSG_NOERROR);
     if(ret < 0) {
         return SFSQ_MSGRCV_ERROR;
@@ -22,7 +22,7 @@ int mutex_unlock(int fd) {
     if(qid < 0) {
         return SFSQ_MSGGET_ERROR;
     }
-    sfs_msg message;
+    struct sfs_msg message;
     message.fd = fd;
     ssize_t ret = msgsnd(qid, &message, sizeof(message), MSG_NOERROR);
     if(ret < 0) {
@@ -32,5 +32,8 @@ int mutex_unlock(int fd) {
 }
 
 int queue_init() {
-    //@TODO
+    int qid = msgget(SFS_QUEUE_KEY, 0666 | IPC_CREAT);
+    if(qid < 0) {
+        return SFSQ_MSGCREAT_ERROR;
+    }
 }

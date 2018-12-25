@@ -1,18 +1,26 @@
-#include "fs.h"
-
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
 #include <unistd.h>
 #include <sys/stat.h>
 
+#include "fs.h"
+#include "queue.h"
+
 
 int simplefs_open(char* name, int mode) {
-    // @TODO
+    int fd = 1; // @TODO
+    if(mutex_lock(fd) != 0){
+        return SFS_LOCK_MUTEX_ERROR;
+    }
+    return fd;
 }
 
 int simplefs_close(int fd) {
-    // @TODO
+    if(mutex_unlock(fd) != 0){
+        return SFS_UNLOCK_MUTEX_ERROR;
+    }
+    return 0;
 }
 
 int simplefs_unlink(char* name) {
