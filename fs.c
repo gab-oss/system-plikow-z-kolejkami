@@ -16,7 +16,6 @@
 #define FS_RDONLY               1	// 001 - Read only
 #define FS_WRONLY               2	// 010 - Write only
 #define FS_RDWR                 3	// 011 - Read and write
-#define FS_CREAT                4	// 100 - Crate file
 
 // Error codes
 #define SFS_LOCK_MUTEX_ERROR    -1
@@ -28,12 +27,14 @@ int fileCount = 0;
 char FSAbsolutePath[200];
 
 char fileNames[MAX_FILES][NAME_SIZE];
+char fileInfos[MAX_FILES][INFO_SIZE];
 //0 - position in FS
 //1 - filesize
 //2 - is directory
 //3 - read allowed
 //4 - write allowed
-char fileInfos[MAX_FILES][5];
+
+char posInFile[MAX_FILES];
 
 //list of free memory blocks
 struct inodeFree
@@ -93,7 +94,7 @@ void readFS(char name[])
 		fread(&fileInfos[i][0], sizeof(char), INFO_SIZE, file);
 
 		freeMemory -= fileInfos[i][1];
-		//check file exitence
+		//check file existence
     if(fileInfos[i][1] != 0) 
 			fileCount++;
   }
@@ -149,7 +150,7 @@ void updateMemory()
   	else
   	{
 			//there is free memory between metadata and first file
-  	  head.base = sizeof(int)+MAX_FILES*(5+NAME_SIZE)+1;
+  	  head.base = sizeof(int)+MAX_FILES*(INFO_SIZE+NAME_SIZE)+1;
   	  head.size = fileInfos[0][0] - head.base;
   	}
   }
@@ -191,6 +192,7 @@ void sortDescriptors()
 {
   char tempI[INFO_SIZE];
   char tempN[NAME_SIZE];
+	char tempP;
   for(int i = 0; i < fileCount; i++)
   {
     int min = i;
@@ -201,13 +203,20 @@ void sortDescriptors()
 					min = j;
   	}
 
+		//switch elements of fileInfos
   	strncpy(tempI, fileInfos[i], INFO_SIZE);
   	strncpy(fileInfos[i], fileInfos[min], INFO_SIZE);
   	strncpy(fileInfos[min], tempI, INFO_SIZE);
   	
+		//switch elements of fileNames
   	strncpy(tempN, fileNames[i], NAME_SIZE);
   	strncpy(fileNames[i], fileNames[min], NAME_SIZE);
   	strncpy(fileNames[min], tempN, NAME_SIZE);
+
+		//switch elements of posInFile
+		tempP = posInFile[i];
+  	posInFile[i] = posInFile[min];
+  	posInFile[min] = tempP;
   }
 }
 
@@ -256,14 +265,16 @@ void defragment()
 
 int simplefs_open(char* name, int mode) {
     int fd = 1; // @TODO
-    if(mutex_lock(fd) != 0){
+    if(mutex_lock(fd) != 0) {
         return SFS_LOCK_MUTEX_ERROR;
     }
+		//set position to beginning of file
+		posInFile[fd] = 0;
     return fd;
 }
 
 int simplefs_close(int fd) {
-    if(mutex_unlock(fd) != 0){
+    if(mutex_unlock(fd) != 0) {
         return SFS_UNLOCK_MUTEX_ERROR;
     }
     return 0;
@@ -306,17 +317,118 @@ int simplefs_unlink(char* name)
 
 int simplefs_mkdir(char* name)
 {
-	//TODO
+	if(strlen(name) > NAME_SIZE || fileCount >= MAX_FILES || freeMemory < 1)
+		return -1;
+
+	//check if directory already exists
+	for(int i = 0; i < fileCount; i++)
+	{
+	  if(strcmp(name, fileNames[i]) == 0 && fileInfos[i][2] == 1) 
+		//mutex jak w open?
+			return i;
+	}
+
+	//find free memory for file
+	struct inodeFree *temp = &head;
+
+	//open FS file
+	FILE *FS = fopen(FSAbsolutePath, "r+");
+  if(FS == NULL) 
+		exit(1);
+
+	//file metadata
+	strcpy(fileNames[fileCount], name);
+	fileInfos[fileCount][0] = temp->base;	//position
+	fileInfos[fileCount][1] = 1;					//file length
+	fileInfos[fileCount][2] = 1;					//directory
+	fileInfos[fileCount][3] = 1;					//read permission
+	fileInfos[fileCount][4] = 1;					//write permission
+
+	fileCount++;
+	sortDescriptors();
+	updateMemory();
+	freeMemory -= 1;
+	
+	//update metadata
+	fseek(FS, sizeof(int), SEEK_SET);
+	for(int i = 0; i < MAX_FILES; i++)
+	{
+    fwrite(&fileNames[i][0], sizeof(char), NAME_SIZE, FS);
+    fwrite(&fileInfos[i][0], sizeof(char), INFO_SIZE, FS);
+  }
+	fclose(FS);
+
+	return 0;
 }
 
-int simplefs_creat(char* name int mode)
+int simplefs_creat(char* name, int mode)
 {
-	//TODO
+	if(strlen(name) > NAME_SIZE || fileCount >= MAX_FILES || freeMemory < 1)
+		return -1;
+
+	//check if file already exists
+	for(int i = 0; i < fileCount; i++)
+	{
+	  if(strcmp(name, fileNames[i]) == 0 && fileInfos[i][2] == 0) 
+		//mutex jak w open?
+			return i;
+	}
+
+	//find free memory for file
+	struct inodeFree *temp = &head;
+
+	//open FS file
+	FILE *FS = fopen(FSAbsolutePath, "r+");
+  if(FS == NULL) 
+		exit(1);
+	
+	//permissions
+	char readPerm = 0, writePerm = 0;
+	if(mode == FS_RDONLY || mode == FS_RDWR)
+		readPerm = 1;
+	if(mode == FS_WRONLY || mode == FS_RDWR)
+		writePerm = 1;
+
+	//file metadata
+	strcpy(fileNames[fileCount], name);
+	fileInfos[fileCount][0] = temp->base;	//position
+	fileInfos[fileCount][1] = 1;					//file length
+	fileInfos[fileCount][2] = 0;					//not a directory
+	fileInfos[fileCount][3] = readPerm;		//read permission
+	fileInfos[fileCount][4] = writePerm;	//write permission
+
+	fileCount++;
+	sortDescriptors();
+	updateMemory();
+	freeMemory -= 1;
+	
+	//update metadata
+	fseek(FS, sizeof(int), SEEK_SET);
+	for(int i = 0; i < MAX_FILES; i++)
+	{
+    fwrite(&fileNames[i][0], sizeof(char), NAME_SIZE, FS);
+    fwrite(&fileInfos[i][0], sizeof(char), INFO_SIZE, FS);
+  }
+	fclose(FS);
+
+	return 0;
 }
 
 int simplefs_read(int fd, char* buf, int len)
-{
-	//TODO
+{	
+	//check permissions, if file is not dir, can be read and is long enoungh
+	if(fileInfos[fd][1] < 1 && fileInfos[fd][2] != 0 && fileInfos[fd][3] != 1 && fileInfos[fd][1] < len) 
+		return -1;
+	
+	FILE *FS = fopen(FSAbsolutePath, "r+");
+
+	//set position to file position + offset
+	fseek(FS, fileInfos[fd][0] + posInFile[fd], SEEK_SET);
+	fread(buf, sizeof(char), len, FS);
+	posInFile[fd] += len;
+
+	fclose(FS);
+	return 0;
 }
 
 int simplefs_write(int fd, char* buf, int len)
