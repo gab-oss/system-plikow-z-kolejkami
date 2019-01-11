@@ -3,7 +3,7 @@
 #include <climits>
 #include <stdio.h>
 #include "StringSplitter.h"
-#include "../include/fs.h"
+#include "fs.h"
 
 using namespace std;
 //
@@ -17,7 +17,7 @@ int main(int argc, char** argv)
     string pwd ="/"; // working directory
     while(true)
     {
-        cout<<pwd<<PROMPT;
+        cout<<endl<<pwd<<PROMPT;
         getline(cin, input);
         vector<string> cmd_parts = splitWithDelimiter(input, ' ');
         string cmd = cmd_parts[0];
