@@ -467,18 +467,24 @@ int simplefs_write(int fd, char* buf, int len)
 
 	//size from current position to eof
 	int restfile = fileInfos[fd][1] - fileInfos[fd][0] - posInFile;
+	//how much will the size increase
+	int sizeinc = 0;
+	if (restfile < sizeof(char) * len) {
+		sizeinc = sizeof(char) * len - restfile;
+	}
 	//check if there's enough space right after the file
 	struct inodeFree * temp = &head;
 	while (temp != NULL) {
-		if (temp->base == eofpos && temp->size >= sizeof(char) * len) {
+		if (temp->base == eofpos && temp->size >= sizeinc) {
 			//temporary save the part of the file after posInFile
-			char * restbuf;
 			fseek(file, fileInfos[fd][0] + posInFile[fd], SEEK_SET);
-			fread(restbuf, restfile, 1, file);
 			//write
 			fwrite(buf, sizeof(char), len, file);
-			fwrite(restbuf, restfile, 1, file);
 			posInFile[fd] += sizeof(char) * len;
+			fileInfos[fd][1] += sizeinc;
+
+			updateMemory();
+			sortDescriptors();
 			return 0;
 		}
 		temp = temp->next;
@@ -487,25 +493,22 @@ int simplefs_write(int fd, char* buf, int len)
 	//look for enough free space
 	temp = &head;
 	while (temp != NULL) {
-		if (inode.size > fileInfos[fd][1] + buf * len){
+		if (inode.size >= fileInfos[fd][1] + sizeinc){
 			//move file
 			char * tempbuf;
-			char * restbuf;
 			fseek(file, fileInfos[fd][0], SEEK_SET);
 			fread(tempbuf, fileInfos[fd][1], 1, file);
-			fseek(file, fileInfos[fd][0] + posInFile[fd], SEEK_SET);
-			fread(restbuf, restfile, 1, file);
 			fseek(file, temp->base, SEEK_SET);
 			fwrite(tempbuf, fileInfos[fd][1], 1, file);
 			//write
 			fwrite(buf, sizeof(char), len, file);
-			//add rest of the file
-			fwrite(restbuf, restfile, 1, file);
 
 			fileInfos[fd][0] = temp->base;
 			fileInfos[fd][1] += len * sizeof(char);
 			posInFile[fd] += sizeof(char) * len;
 
+			updateMemory();
+			sortDescriptors();
 			return 0;
 		}
 
