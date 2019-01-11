@@ -263,14 +263,18 @@ void defragment()
 	updateMemory();
 }
 
+// int simplefs_open(char* name, int mode) {
+//     int fd = 1;  @TODO
+//     if(mutex_lock(fd) != 0) {
+//         return SFS_LOCK_MUTEX_ERROR;
+//     }
+// 		set position to beginning of file
+// 		posInFile[fd] = 0;
+//     return fd;
+// }
+
 int simplefs_open(char* name, int mode) {
-    int fd = 1; // @TODO
-    if(mutex_lock(fd) != 0) {
-        return SFS_LOCK_MUTEX_ERROR;
-    }
-		//set position to beginning of file
-		posInFile[fd] = 0;
-    return fd;
+
 }
 
 int simplefs_close(int fd) {
@@ -536,7 +540,22 @@ int simplefs_lseek(int fd, int whence, int offset)
 }
 
 int simplefs_ls(char name[]){
-	return 0;
+	for (int i = 0; i < fileCount; ++i) {
+		if(strcmp(name, fileNames[i]) == 0) {
+			char * buf;
+			simplefs_lseek(i, SEEK_SET, 0);
+			simplefs_read(i, buf, fileInfos[i][1]);
+
+			for (int j = 0; j < sizeof(*buf); ++j){
+				std::cout << fileNames[buf[j]] << std::endl;
+			}
+			
+			return 0;
+		}
+	}
+
+	//directory not found
+	return -1;
 }
 
 #endif //FS_H
