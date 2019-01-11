@@ -1,3 +1,0 @@
-/home/gabe/Pulpit/fs/system-plikow-z-kolejkami/CMakeFiles/rebuild_cache.dir
-/home/gabe/Pulpit/fs/system-plikow-z-kolejkami/CMakeFiles/simplefs.dir
-/home/gabe/Pulpit/fs/system-plikow-z-kolejkami/CMakeFiles/edit_cache.dir
