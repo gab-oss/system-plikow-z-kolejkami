@@ -1,0 +1,1 @@
+/usr/bin/cc   -rdynamic CMakeFiles/simplefs.dir/src/main.c.o CMakeFiles/simplefs.dir/src/fs.c.o CMakeFiles/simplefs.dir/src/queue.c.o  -o simplefs 

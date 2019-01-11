@@ -76,7 +76,7 @@ int simplefs_mount(char* name, int size) {
 void readFS(char name[])
 {
   strcpy(FSAbsolutePath, name);
-  FILE *file = fopen(name, "r");
+  FILE *file = fopen(name, "r");    
   if(file == NULL) 
 		exit(1);
   
@@ -133,7 +133,7 @@ void updateMemory()
     	}
 			//position of first free memory segment
     	head.base = fileInfos[i][0] + fileInfos[i][1];
-    	if(i == fileCount-1)
+    	if (i == fileCount-1)
     	{
 				//all free memory follows last file
     		head.size = capacity - head.base + 1;
@@ -431,14 +431,109 @@ int simplefs_read(int fd, char* buf, int len)
 	return 0;
 }
 
+//0 - position in FS
+//1 - filesize
+//2 - is directory
+//3 - read allowed
+//4 - write allowed
+
 int simplefs_write(int fd, char* buf, int len)
 {
-	//TODO
+
+	//check if there's enough memory
+	if (freeMemory < sizeof(char) * len) {
+		return -1;
+	}
+
+	//fd is a valid descriptor
+	if (fd >= fileCount) {
+		return -1;
+	}
+
+  //write permission's set
+	if (!fileInfos[fd][4]) {
+		return -1;
+	}
+
+	//file is not a directory
+	if(fileInfos[fd][2]) {
+		return -1;
+	}
+
+	//first position after file
+	int eofpos = fileInfos[fd][0] + fileInfos[fd][1];
+
+  FILE * file = fopen(FSAbsolutePath, "r+");
+
+	//size from current position to eof
+	int restfile = fileInfos[fd][1] - fileInfos[fd][0] - posInFile;
+	//check if there's enough space right after the file
+	struct inodeFree * temp = &head;
+	while (temp != NULL) {
+		if (temp->base == eofpos && temp->size >= sizeof(char) * len) {
+			//temporary save the part of the file after posInFile
+			char * restbuf;
+			fseek(file, fileInfos[fd][0] + posInFile[fd], SEEK_SET);
+			fread(restbuf, restfile, 1, file);
+			//write
+			fwrite(buf, sizeof(char), len, file);
+			fwrite(restbuf, restfile, 1, file);
+			posInFile[fd] += sizeof(char) * len;
+			return 0;
+		}
+		temp = temp->next;
+	}
+
+	//look for enough free space
+	temp = &head;
+	while (temp != NULL) {
+		if (inode.size > fileInfos[fd][1] + buf * len){
+			//move file
+			char * tempbuf;
+			char * restbuf;
+			fseek(file, fileInfos[fd][0], SEEK_SET);
+			fread(tempbuf, fileInfos[fd][1], 1, file);
+			fseek(file, fileInfos[fd][0] + posInFile[fd], SEEK_SET);
+			fread(restbuf, restfile, 1, file);
+			fseek(file, temp->base, SEEK_SET);
+			fwrite(tempbuf, fileInfos[fd][1], 1, file);
+			//write
+			fwrite(buf, sizeof(char), len, file);
+			//add rest of the file
+			fwrite(restbuf, restfile, 1, file);
+
+			fileInfos[fd][0] = temp->base;
+			fileInfos[fd][1] += len * sizeof(char);
+			posInFile[fd] += sizeof(char) * len;
+
+			return 0;
+		}
+
+		temp = temp->next;
+	}
+
+	//no block large enough
+	return -1;
+
 }
 
 int simplefs_lseek(int fd, int whence, int offset)
 {
-	//TODO
+
+	if (whence == SEEK_SET)
+		fseek(file, fileInfos[fd][0], SEEK_SET);
+	else if (whence == SEEK_CUR)
+		fseek(file, fileInfos[fd][0] + posInFile[fd], SEEK_SET);
+	else if (whence == SEEK_END) 
+		fseek (file, fileInfos[fd][0] + fileInfos[fd][1], SEEK_SET);
+	else
+		return -1;
+	
+	return 0;
+}
+
+int simplefs_ls(char name[]){
+	return 0;
 }
 
 #endif //FS_H
