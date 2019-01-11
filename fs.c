@@ -521,11 +521,11 @@ int simplefs_lseek(int fd, int whence, int offset)
 {
 
 	if (whence == SEEK_SET)
-		fseek(file, fileInfos[fd][0], SEEK_SET);
+		posInFile[fd] += fileInfos[fd][0] + offset;
 	else if (whence == SEEK_CUR)
-		fseek(file, fileInfos[fd][0] + posInFile[fd], SEEK_SET);
+		posInFile[fd] += offset; 
 	else if (whence == SEEK_END) 
-		fseek (file, fileInfos[fd][0] + fileInfos[fd][1], SEEK_SET);
+		posInFile[fd] += fileInfos[fd][0] + fileInfos[fd][1] - offset;
 	else
 		return -1;
 	
