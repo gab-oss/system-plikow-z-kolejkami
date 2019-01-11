@@ -542,15 +542,14 @@ int simplefs_lseek(int fd, int whence, int offset)
 int simplefs_ls(char name[]){
 	for (int i = 0; i < fileCount; ++i) {
 		if(strcmp(name, fileNames[i]) == 0) {
-			
-			FILE * file = fopen(FSAbsolutePath, "r+");
-			fseek(file, fileInfos[i][0], SEEK_SET);
+			char * buf;
+			simplefs_lseek(i, SEEK_SET, 0);
+			simplefs_read(i, buf, fileInfos[i][1]);
 
-			char buffer[NAME_SIZE];
-			while (getline(&buffer, &NAME_SIZE, file)){
-				printf("%s \n", buffer);
+			for (int j = 0; j < sizeof(*buf); ++j){
+				std::cout << fileNames[buf[j]] << std::endl;
 			}
-
+			
 			return 0;
 		}
 	}
