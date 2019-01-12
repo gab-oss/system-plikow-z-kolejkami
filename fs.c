@@ -257,31 +257,18 @@ void defragment()
 
 int simplefs_open(char* name, int mode) {
 
-	char filename[NAME_SIZE]; 
-	if (check_path(name, filename) == -1) { //name = path
+	char filename[NAME_SIZE];
+	fileId = check_path(name, filename);
+	if (fileId == -1 || fileInfos[fileId][2] == 1) {
+		//no file or file is dir
 		return -1;
 	}
 
-	strcpy(filename, name); //name = filename
+	if(mutex_lock(fileId) != SFSQ_OK) {
+        return SFS_UNLOCK_MUTEX_ERROR;
+    }
 
-	FILE *FS = fopen(FSAbsolutePath, "r+");
-  	if(FS == NULL) 
-		return 1;
-
-	//find fd in directory file
-	char buf[NAME_SIZE];
-	fseek(FS, fileInfos[dirdesc][0], SEEK_SET);
-	fread(buf, fileInfos[fd][1], 1, FS);
-
-	fclose(FS);
-
-	for (int j = 0; j < fileInfos[i][1]; ++j) {
-		if (strcmp(fileNames[buf[j]], filename) == 0) { //file found in dir
-			return j;
-		}
-	}
-
-	return -1;
+	return fd;
 }
 
 int simplefs_close(int fd) {
