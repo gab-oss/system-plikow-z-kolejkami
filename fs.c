@@ -68,9 +68,18 @@ int* getSortedOrder()
 	return order;
 }
 
+void updateMetadata(FILE *FS)
+{
+	fseek(FS, sizeof(int), SEEK_SET);
+	for(int i = 0; i < MAX_FILES; i++)
+	{
+    fwrite(&fileNames[i][0], sizeof(char), NAME_SIZE, FS);
+    fwrite(&fileInfos[i][0], sizeof(char), INFO_SIZE, FS);
+  }
+}
+
 //TODO: mutexy
 int simplefs_mount(char* name, int size) {
-{
 	if( access( name, F_OK ) != -1 )
 		readFS(name);
 		return 0;
@@ -84,7 +93,7 @@ int simplefs_mount(char* name, int size) {
   	freeMemory = capacity - (sizeof(int)+MAX_FILES*(INFO_SIZE+NAME_SIZE)+1);
   
 	//first dir
-	fileNames[0] = '.';
+	strcpy(fileNames[0], ".");
 	fileInfos[0][0] = 0;
 	fileInfos[0][1] = 1;
 	fileInfos[0][2] = 1;
@@ -216,16 +225,6 @@ void updateMemory()
   }
 }
 
-void updateMetadata(FILE *FS)
-{
-	fseek(FS, sizeof(int), SEEK_SET);
-	for(int i = 0; i < MAX_FILES; i++)
-	{
-    fwrite(&fileNames[i][0], sizeof(char), NAME_SIZE, FS);
-    fwrite(&fileInfos[i][0], sizeof(char), INFO_SIZE, FS);
-  }
-}
-
 //TODO: mutexy
 void defragment()
 {
@@ -267,7 +266,7 @@ void defragment()
 int simplefs_open(char* name, int mode) {
 
 	char filename[NAME_SIZE];
-	fileId = check_path(name, filename);
+	int fileId = check_path(name, filename);
 	if (fileId == -1 || fileInfos[fileId][2] == 1) {
 		//no file or file is dir
 		return -1;
@@ -277,7 +276,7 @@ int simplefs_open(char* name, int mode) {
         return SFS_UNLOCK_MUTEX_ERROR;
     }
 
-	return fd;
+	return fileId;
 }
 
 int simplefs_close(int fd) {
@@ -291,7 +290,7 @@ int simplefs_close(int fd) {
 int simplefs_unlink(char* name)
 {
 	char filename[NAME_SIZE]; 
-	fileId = check_path(name, filename);
+	int fileId = check_path(name, filename);
 	if (fileId == 0 ||fileId == -1 || (fileInfos[fileId][2] == 1 && fileInfos[fileId][1] == 1)) {
 		//no file or file is non-empty dir
 		return -1;
@@ -321,7 +320,7 @@ int simplefs_unlink(char* name)
 int simplefs_mkdir(char* name)
 {
 	char filename[NAME_SIZE];
-	fileId = check_path(name , filename);
+	int fileId = check_path(name , filename);
 	if(fileId == -1 || fileInfos[fileId][1] != 0) 
 	//wrong path or file exists
 		return -1;
@@ -468,7 +467,7 @@ int simplefs_write(int fd, char* buf, int len)
   FILE * file = fopen(FSAbsolutePath, "r+");
 
 	//size from current position to eof
-	int restfile = fileInfos[fd][1] - fileInfos[fd][0] - posInFile;
+	int restfile = fileInfos[fd][1] - fileInfos[fd][0] - posInFile[fd];
 	//how much will the size increase
 	int sizeinc = 0;
 	if (restfile < sizeof(char) * len) {
@@ -494,7 +493,7 @@ int simplefs_write(int fd, char* buf, int len)
 	//look for enough free space
 	temp = &head;
 	while (temp != NULL) {
-		if (inode.size >= fileInfos[fd][1] + sizeinc){
+		if (temp->size >= fileInfos[fd][1] + sizeinc){
 			//move file
 			char * tempbuf;
 			fseek(file, fileInfos[fd][0], SEEK_SET);
@@ -576,7 +575,7 @@ int check_prev_dir(int prevdesc, char * dir){
 		}
 	}
 
-	return 0;
+	return -1;
 }
 
 int create_path(char * name, char * _filename) {
@@ -586,7 +585,7 @@ int create_path(char * name, char * _filename) {
 	char dirname[NAME_SIZE];
 	int dirdesc = -1;
 
-	n_i = 0, f_i = 0; //name i, filename i
+	int n_i = 0, f_i = 0; //name i, filename i
 
 	while (name[n_i] != '\0'){
 		if (f_i >= NAME_SIZE) //one of the names in the path is too long
@@ -600,7 +599,7 @@ int create_path(char * name, char * _filename) {
 						dirdesc = i;
 					}
 					else {					
-						dirdesc = mkdir(filename);
+						dirdesc = simplefs_mkdir(filename);
 					}
 				}
 			}
@@ -612,9 +611,9 @@ int create_path(char * name, char * _filename) {
 				//	get full path of the current directory
 					char subbuff[n_i + 2];
 					memcpy(subbuff, name, n_i + 1 );
-					subbuff[n_1 + 1] = '\0';
+					subbuff[n_i + 1] = '\0';
 
-					dirdesc = mkdir(subbuff);
+					dirdesc = simplefs_mkdir(subbuff);
 				}
 			}
 
@@ -644,7 +643,7 @@ int check_path(char * name, char * _filename)
 	char filename[NAME_SIZE];
 	int dirdesc = -1;
 
-	n_i = 0, f_i = 0; 			//name i, filename i
+	int n_i = 0, f_i = 0; 			//name i, filename i
 
 	while (name[n_i] != '\0')
 	{
