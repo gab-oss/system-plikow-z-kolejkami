@@ -660,9 +660,6 @@ int create_path(char * name, char * _filename) {
 int check_path(char * name, char * _filename) 
 {
 	char filename[NAME_SIZE];
-	char prevname[NAME_SIZE];	//previous dir in path
-	int prevdesc = -1; 			//home
-	char dirname[NAME_SIZE];
 	int dirdesc = -1;
 
 	n_i = 0, f_i = 0; 			//name i, filename i
@@ -675,16 +672,13 @@ int check_path(char * name, char * _filename)
 		if (name[n_i] == '/') 
 		{ //directory name read to the filename array
 			filename[f_i] = '\0'; //close string
-			if (prevdesc == -1) 
+			if (dirdesc == -1) 
 			{ //top directory
 				for (int i = 0; i < MAX_FILES; ++i) 
 				{
 					if (strcmp(filename, fileNames[i]) == 0) 
 					{ //dir existis
-						prevdesc = dirdesc;
-						strcpy(dirdesc, prevdesc);
 						dirdesc = i;
-						strcpy(filename, dirname);
 						f_i = 0;
 						break;
 					}
@@ -697,10 +691,7 @@ int check_path(char * name, char * _filename)
 				int fileId = check_prev_dir(dirdesc, filename);
 				if (fileId != 0) 
 				{ //check if dir is in prev dir
-					prevdesc = dirdesc;
-					strcpy(dirdesc, prevdesc);
 					dirdesc = fileId;
-					strcpy(filename, dirname);
 					f_i = 0;
 				}
 				else {
@@ -719,8 +710,7 @@ int check_path(char * name, char * _filename)
 
 	filename[f_i] = '\0'; //close filename
 
-	strcpy(filename, _filename);
-	return dirdesc;
+	return check_prev_dir(dirdesc, filename);
 }
 
 #endif //FS_H
