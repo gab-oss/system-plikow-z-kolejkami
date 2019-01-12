@@ -255,16 +255,6 @@ void defragment()
 	fclose(FS);
 }
 
-// int simplefs_open(char* name, int mode) {
-//     int fd = 1;  @TODO
-//     if(mutex_lock(fd) != 0) {
-//         return SFS_LOCK_MUTEX_ERROR;
-//     }
-// 		set position to beginning of file
-// 		posInFile[fd] = 0;
-//     return fd;
-// }
-
 int simplefs_open(char* name, int mode) {
 
 	char filename[NAME_SIZE]; 
@@ -466,15 +456,8 @@ int simplefs_read(int fd, char* buf, int len)
 	return 0;
 }
 
-//0 - position in FS
-//1 - filesize
-//2 - is directory
-//3 - read allowed
-//4 - write allowed
-
 int simplefs_write(int fd, char* buf, int len)
 {
-
 	//check if there's enough memory
 	if (freeMemory < sizeof(char) * len) {
 		return -1;
@@ -592,10 +575,14 @@ int simplefs_ls(char name[]){
 	return -1;
 }
 
-int check_prev_dir(int prevdesc, char dir[]){
+int check_prev_dir(int prevdesc, char * dir){
 	//check if previous directory contains dir and return dirdesc
 	if (prevdesc == -1) { //prev is home
-		return 0;
+		for(int i = 0; i < MAX_FILES; ++i)
+		{
+			if(strcmp(fileNames[i],dir) == 0)
+				return i;
+		}
 	}
 
 	char * buf;
@@ -607,7 +594,7 @@ int check_prev_dir(int prevdesc, char dir[]){
 		}
 	}
 
-	return -1;
+	return 0;
 }
 
 int create_path(char * name, char * _filename) {
@@ -670,24 +657,30 @@ int create_path(char * name, char * _filename) {
 	return 0;
 }
 
-int check_path(char * name, char * _filename) {
+int check_path(char * name, char * _filename) 
+{
 	char filename[NAME_SIZE];
-	char prevname[NAME_SIZE]; //previous dir in path
-	int prevdesc = -1; //home
+	char prevname[NAME_SIZE];	//previous dir in path
+	int prevdesc = -1; 			//home
 	char dirname[NAME_SIZE];
 	int dirdesc = -1;
 
-	n_i = 0, f_i = 0; //name i, filename i
+	n_i = 0, f_i = 0; 			//name i, filename i
 
-	while (name[n_i] != '\0'){
+	while (name[n_i] != '\0')
+	{
 		if (f_i >= NAME_SIZE) //one of the names in the path is too long
 			return -1;
 
-		if (name[n_i] == '/') { //directory name read to the filename array
+		if (name[n_i] == '/') 
+		{ //directory name read to the filename array
 			filename[f_i] = '\0'; //close string
-			if (prevdesc == -1) { //top directory
-				for (int i = 0; i < fileCount; ++i) {
-					if (strcmp(filename, fileNames[i]) == 0) { //dir existis
+			if (prevdesc == -1) 
+			{ //top directory
+				for (int i = 0; i < MAX_FILES; ++i) 
+				{
+					if (strcmp(filename, fileNames[i]) == 0) 
+					{ //dir existis
 						prevdesc = dirdesc;
 						strcpy(dirdesc, prevdesc);
 						dirdesc = i;
@@ -695,15 +688,18 @@ int check_path(char * name, char * _filename) {
 						f_i = 0;
 						break;
 					}
-					if (i == fileCount - 1)
+					if (i == MAX_FILES - 1)
 						return -1;
 				}			
 			}
-			else {
-				if (check_prev_dir(prevdesc, filename)) { //check if dir is in prev dir
+			else 
+			{
+				int fileId = check_prev_dir(dirdesc, filename);
+				if (fileId != 0) 
+				{ //check if dir is in prev dir
 					prevdesc = dirdesc;
 					strcpy(dirdesc, prevdesc);
-					dirdesc = check_prev_dir(prevdesc, filename);
+					dirdesc = fileId;
 					strcpy(filename, dirname);
 					f_i = 0;
 				}
@@ -712,7 +708,8 @@ int check_path(char * name, char * _filename) {
 				}
 			}
 		}
-		else {
+		else 
+		{
 			filename[f_i] = name[n_i]; //read next character to the filename
 			++f_i;
 		}
