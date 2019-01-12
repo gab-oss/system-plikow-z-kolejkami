@@ -709,7 +709,7 @@ int check_path(char * name, char * _filename)
 	}
 
 	filename[f_i] = '\0'; //close filename
-
+	strcpy(_filename, filename);
 	return check_prev_dir(dirdesc, filename);
 }
 
