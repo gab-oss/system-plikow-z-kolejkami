@@ -75,20 +75,29 @@ int simplefs_mount(char* name, int size) {
 		readFS(name);
 		return 0;
 
-  strcpy(FSAbsolutePath, name);
-	//check if enough space for metadata
-  if(size < sizeof(int)+MAX_FILES*(INFO_SIZE+NAME_SIZE))
+  	strcpy(FSAbsolutePath, name);
+	//check if enough space for metadata and first file
+  	if(size < sizeof(int)+MAX_FILES*(INFO_SIZE+NAME_SIZE)+1)
 		return 1;
 
-  capacity = size;
-  freeMemory = capacity - (sizeof(int)+MAX_FILES*(INFO_SIZE+NAME_SIZE));
+  	capacity = size;
+  	freeMemory = capacity - (sizeof(int)+MAX_FILES*(INFO_SIZE+NAME_SIZE)+1);
   
-  FILE *file = fopen(name, "w");
+	//first dir
+	fileNames[0] = '.';
+	fileInfos[0][0] = 0;
+	fileInfos[0][1] = 1;
+	fileInfos[0][2] = 1;
+	fileInfos[0][3] = 1;
+	fileInfos[0][4] = 1;
+
+  	FILE *file = fopen(name, "w");
   
 	//write size of FS to metadata
-  fwrite(&size, sizeof(int), 1, file);
-  
-  fclose(file);
+  	fwrite(&size, sizeof(int), 1, file);
+	updateMetadata(file);
+
+  	fclose(file);
 	return 0;
 }
 
@@ -283,7 +292,7 @@ int simplefs_unlink(char* name)
 {
 	char filename[NAME_SIZE]; 
 	fileId = check_path(name, filename);
-	if (fileId == -1 || (fileInfos[fileId][2] == 1 && fileInfos[fileId][1] == 1)) {
+	if (fileId == 0 ||fileId == -1 || (fileInfos[fileId][2] == 1 && fileInfos[fileId][1] == 1)) {
 		//no file or file is non-empty dir
 		return -1;
 	}
@@ -312,19 +321,13 @@ int simplefs_unlink(char* name)
 int simplefs_mkdir(char* name)
 {
 	char filename[NAME_SIZE];
-	if (check_path(name , filename) == -1) //name = path, filename = resulting filename
+	fileId = check_path(name , filename);
+	if(fileId == -1 || fileInfos[fileId][1] != 0) 
+	//wrong path or file exists
 		return -1;
 		
 	if(strlen(filename) > NAME_SIZE || fileCount >= MAX_FILES || freeMemory < 1)
 		return -1;
-
-	//check if directory already exists
-	for(int i = 0; i < MAX_FILES; i++)
-	{
-	  if(strcmp(filename, fileNames[i]) == 0 && fileInfos[i][2] == 1) 
-		//mutex jak w open?
-		return i;
-	}
 
 	//find free memory for file
 	struct inodeFree *temp = &head;
@@ -545,7 +548,8 @@ int simplefs_ls(char name[]){
 			simplefs_lseek(i, SEEK_SET, 0);
 			simplefs_read(i, buf, fileInfos[i][1]);
 
-			for (int j = 0; j < fileInfos[i][1]; ++j){
+			//first byte is just flag, not id
+			for (int j = 1; j < fileInfos[i][1]; ++j){
 				printf("%s \n", fileNames[buf[j]]);
 			}
 
@@ -559,17 +563,14 @@ int simplefs_ls(char name[]){
 int check_prev_dir(int prevdesc, char * dir){
 	//check if previous directory contains dir and return dirdesc
 	if (prevdesc == -1) { //prev is home
-		for(int i = 0; i < MAX_FILES; ++i)
-		{
-			if(strcmp(fileNames[i],dir) == 0)
-				return i;
-		}
+		return -1;
 	}
 
 	char * buf;
 	simplefs_lseek(prevdesc, SEEK_SET, 0);
 	simplefs_read(prevdesc, buf, fileInfos[prevdesc][1]); //read prev to buf
-	for (int j = 0; j < fileInfos[prevdesc][1]; ++j) {
+	//first byte is just flag, not id
+	for (int j = 1; j < fileInfos[prevdesc][1]; ++j) {
 		if (strcmp(fileNames[buf[j]], dir) == 0) { //dir found in prev
 			return buf[j];
 		}
