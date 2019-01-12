@@ -3,7 +3,7 @@
 #include <climits>
 #include <stdio.h>
 #include "StringSplitter.h"
-#include "fs.h"
+#include "../src/fs.c"
 
 using namespace std;
 //
@@ -28,8 +28,8 @@ int main(int argc, char** argv)
                 cout<<"Usage: touch <path>";
                 continue;
             }
-            cmd_parts[1] += pwd;
-            int fd = simplefs_creat((char*)cmd_parts[1].c_str(), FS_CREAT);
+            string path = pwd +cmd_parts[1];
+            int fd = simplefs_creat((char*)path.c_str(), FS_CREAT);
             if( fd < 0)
                 cout<<"Couldn't creat file "<<cmd_parts[1];
             else
@@ -42,8 +42,8 @@ int main(int argc, char** argv)
                 cout<<"Usage: mkdir <path>";
                 continue;
             }
-            cmd_parts[1] += pwd;
-            if( simplefs_mkdir((char*)cmd_parts[1].c_str()) < 0)
+            string path = pwd +cmd_parts[1];
+            if( simplefs_mkdir((char*)path.c_str()) < 0)
                 cout<<"Couldn't create directory";
         }
         else if(cmd == "rm")
@@ -53,8 +53,8 @@ int main(int argc, char** argv)
                 cout<<"Usage: rm <path>";
                 continue;
             }
-            cmd_parts[1] += pwd;
-            if (simplefs_unlink((char *)cmd_parts[1].c_str()) < 0)
+            string path = pwd +cmd_parts[1];
+            if (simplefs_unlink((char *)path.c_str()) < 0)
                 cout<<"rm error";
         }
         else if(cmd == "write")
@@ -63,8 +63,8 @@ int main(int argc, char** argv)
             {
                 cout<<"Usage: write <path> <line>";
             }
-            cmd_parts[1] += pwd;
-            int fd = simplefs_open((char*)cmd_parts[1].c_str(), FS_WRONLY);
+            string path = pwd +cmd_parts[1];
+            int fd = simplefs_open((char*)path.c_str(), FS_WRONLY);
             if(fd < 0)
             {
                 cout<<"Counldn't open "<<cmd_parts[1];
@@ -85,8 +85,8 @@ int main(int argc, char** argv)
                 cout<<"Usage: cat <path> [whence] [offset]";
                 continue;
             }
-            cmd_parts[1]+=pwd;
-            int fd = simplefs_open((char*)cmd_parts[1].c_str(), FS_RDONLY);
+            string path = pwd +cmd_parts[1];
+            int fd = simplefs_open((char*)path.c_str(), FS_RDONLY);
             if( fd < 0)
             {
                 cout<<"Couldn't open "<<cmd_parts[1];
@@ -126,7 +126,7 @@ int main(int argc, char** argv)
             //TO DO
         }
         
-        else if(cmd == "unomount")
+        else if(cmd == "unmount")
         { // unmount <fs file path>
             if(cmd_parts.size() < 2)
             {
@@ -158,6 +158,10 @@ int main(int argc, char** argv)
                 continue;
             }
             pwd = cmd_parts[1];
+        }
+        else if(cmd == "quit")
+        {
+            break;
         }
         else{
             cout<<"Unrecognized command";
