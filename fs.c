@@ -422,10 +422,9 @@ int simplefs_mkdir(char* name)
 
 int simplefs_creat(char* name, int mode) //name is a full path
 {
-
 	char filename[NAME_SIZE];
 	char prevname[NAME_SIZE]; //previous dir in path
-	int prevdesc = -1; //home
+	int prevdesc = -1; 				//home
 	char dirname[NAME_SIZE];
 	int dirdesc = -1;
 
@@ -439,7 +438,7 @@ int simplefs_creat(char* name, int mode) //name is a full path
 			filename[f_i] = '\0'; //close string
 			if (prevdesc == -1) { //top directory
 				for (int i = 0; i < fileCount; ++i) {
-					if (strcmp(filename, fileNames[i]) == 0) { //dir existis
+					if (strcmp(filename, fileNames[i]) == 0) { //dir exists
 						dirdesc = i;
 					}
 					else {					
