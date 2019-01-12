@@ -45,6 +45,8 @@ struct inodeFree
 }head;
 
 void updateMemory();
+void readFS(char name[]);
+int check_path(char * name, char * _filename);
 
 //get file indexes in order as written in FS
 int* getSortedOrder()
@@ -56,12 +58,12 @@ int* getSortedOrder()
 		order[i] = 0;
 		for(int j = 0; j < MAX_FILES; j++)
 		{
-			if(fileInfos[j][1] != 0 && fileInfos[j][0] > min && fileInfos[j][0] < fileInfos[order[i]])
+			if(fileInfos[j][1] != 0 && fileInfos[j][0] > min && fileInfos[j][0] < fileInfos[order[i]][0])
 			{	
 				order[i] = j;
-				min = fileInfos[j][0];
 			}
 		}
+		min = fileInfos[order[i]][0];
   }
 	return order;
 }
@@ -219,23 +221,23 @@ void updateMetadata(FILE *FS)
 void defragment()
 {
 	FILE *FS = fopen(FSAbsolutePath, "r+");
-  if(FS == NULL) 
-		return 1;
+  	if(FS == NULL) 
+		return;
 	
 	int *ord = getSortedOrder();
 	
-  if(fileCount > 0)
-  {
+  	if(fileCount > 0)
+  	{
 		//write first file to buffer
-    char *buffer = malloc(fileInfos[ord[0]][1]);
+    	char *buffer = malloc(fileInfos[ord[0]][1]);
 		fseek(FS, fileInfos[ord[0]][0], SEEK_SET);
 		fread(buffer, sizeof(char), fileInfos[ord[0]][1], FS);
 		
 		//move first file to after metadata
-  	fileInfos[ord[0]][0] = sizeof(int)+MAX_FILES*(INFO_SIZE+NAME_SIZE)+1;
+  		fileInfos[ord[0]][0] = sizeof(int)+MAX_FILES*(INFO_SIZE+NAME_SIZE)+1;
 		fseek(FS, fileInfos[ord[0]][0], SEEK_SET);
 		fwrite(buffer, sizeof(char), fileInfos[ord[0]][1], FS);
-  }
+  	}
 	for(int i = 1; i < fileCount; i++)
 	{
 		//move file to after previous one
@@ -243,13 +245,14 @@ void defragment()
 		fseek(FS, fileInfos[ord[i]][0], SEEK_SET);
 		fread(buffer, sizeof(char), fileInfos[ord[i]][1], FS);
 		
-  	fileInfos[ord[i]][0] = fileInfos[ord[i-1]][0]+fileInfos[ord[i-1]][1]+1;
+  		fileInfos[ord[i]][0] = fileInfos[ord[i-1]][0]+fileInfos[ord[i-1]][1]+1;
 		fseek(FS, fileInfos[ord[i]][0], SEEK_SET);
 		fwrite(buffer, sizeof(char), fileInfos[ord[i]][1], FS);
 	}
 
-	updateMetadata();
+	updateMetadata(FS);
 	updateMemory();
+	fclose(FS);
 }
 
 // int simplefs_open(char* name, int mode) {
@@ -271,10 +274,16 @@ int simplefs_open(char* name, int mode) {
 
 	strcpy(filename, name); //name = filename
 
+	FILE *FS = fopen(FSAbsolutePath, "r+");
+  	if(FS == NULL) 
+		return 1;
+
 	//find fd in directory file
 	char buf[NAME_SIZE];
-	fseek(file, fileInfos[dirdesc][0], SEEK_SET);
-	fread(buf, fileInfos[fd][1], 1, file);
+	fseek(FS, fileInfos[dirdesc][0], SEEK_SET);
+	fread(buf, fileInfos[fd][1], 1, FS);
+
+	fclose(FS);
 
 	for (int j = 0; j < fileInfos[i][1]; ++j) {
 		if (strcmp(fileNames[buf[j]], filename) == 0) { //file found in dir
@@ -307,25 +316,19 @@ int simplefs_unlink(char* name)
 		if(strcmp(name, fileNames[i]) == 0)
 		{
 			//clear filename and info of deleted file
-		  fileCount--;
-		  freeMemory += fileInfos[i][1];
-		  memset(fileNames[i], 0, NAME_SIZE);
-		  memset(fileInfos[i], 0, INFO_SIZE);
+		  	fileCount--;
+		  	freeMemory += fileInfos[i][1];
+		  	memset(fileNames[i], 0, NAME_SIZE);
+		  	memset(fileInfos[i], 0, INFO_SIZE);
 		  
-		  updateMemory();
+		  	updateMemory();
 		  
 			//save changes to FS
-		  FILE *FS = fopen(FSAbsolutePath, "r+");
-  		if(FS == NULL) 
+		  	FILE *FS = fopen(FSAbsolutePath, "r+");
+  			if(FS == NULL) 
 				return 1;
 		  
-			//update metadata
-		  fseek(FS, sizeof(int), SEEK_SET);
-			for(int i = 0; i < MAX_FILES; i++)
-  		{
-    		fwrite(&fileNames[i][0], sizeof(char), NAME_SIZE, FS);
-    		fwrite(&fileInfos[i][0], sizeof(char), INFO_SIZE, FS);
-  		}
+			updateMetadata(FS);
 	
 			fclose(FS);
 			return 0;
@@ -380,7 +383,7 @@ int simplefs_mkdir(char* name)
 	updateMemory();
 	freeMemory -= 1;
 	
-	updateMetadata();
+	updateMetadata(FS);
 	fclose(FS);
 
 	return 0;
@@ -440,7 +443,7 @@ int simplefs_creat(char* name, int mode) //name is a full path
 	updateMemory();
 	freeMemory -= 1;
 
-	updateMetadata();
+	updateMetadata(FS);
 	fclose(FS);
 
 	return 0;
@@ -720,7 +723,7 @@ int check_path(char * name, char * _filename) {
 	filename[f_i] = '\0'; //close filename
 
 	strcpy(filename, _filename);
-	return 0;
+	return dirdesc;
 }
 
 #endif //FS_H
