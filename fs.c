@@ -205,6 +205,16 @@ void updateMemory()
   }
 }
 
+void updateMetadata(FILE *FS)
+{
+	fseek(FS, sizeof(int), SEEK_SET);
+	for(int i = 0; i < MAX_FILES; i++)
+	{
+    fwrite(&fileNames[i][0], sizeof(char), NAME_SIZE, FS);
+    fwrite(&fileInfos[i][0], sizeof(char), INFO_SIZE, FS);
+  }
+}
+
 //TODO: mutexy
 void defragment()
 {
@@ -238,15 +248,7 @@ void defragment()
 		fwrite(buffer, sizeof(char), fileInfos[ord[i]][1], FS);
 	}
 
-	//update metadata	
-	fseek(FS, sizeof(int), SEEK_SET);
-	for(int i = 0; i < MAX_FILES; i++)
-  {
-    fwrite(&fileNames[i][0], sizeof(char), NAME_SIZE, FS);
-    fwrite(&fileInfos[i][0], sizeof(char), INFO_SIZE, FS);
-  }
-	
-	fclose(FS);
+	updateMetadata();
 	updateMemory();
 }
 
@@ -408,13 +410,7 @@ int simplefs_mkdir(char* name)
 	updateMemory();
 	freeMemory -= 1;
 	
-	//update metadata
-	fseek(FS, sizeof(int), SEEK_SET);
-	for(int i = 0; i < MAX_FILES; i++)
-	{
-    fwrite(&fileNames[i][0], sizeof(char), NAME_SIZE, FS);
-    fwrite(&fileInfos[i][0], sizeof(char), INFO_SIZE, FS);
-  }
+	updateMetadata();
 	fclose(FS);
 
 	return 0;
@@ -523,13 +519,7 @@ int simplefs_creat(char* name, int mode) //name is a full path
 	updateMemory();
 	freeMemory -= 1;
 
-	//update metadata
-	fseek(FS, sizeof(int), SEEK_SET);
-	for(int i = 0; i < MAX_FILES; i++)
-	{
-    fwrite(&fileNames[i][0], sizeof(char), NAME_SIZE, FS);
-    fwrite(&fileInfos[i][0], sizeof(char), INFO_SIZE, FS);
-  }
+	updateMetadata();
 	fclose(FS);
 
 	return 0;
@@ -654,7 +644,7 @@ int simplefs_lseek(int fd, int whence, int offset)
 }
 
 int simplefs_ls(char name[]){
-	for (int i = 0; i < fileCount; ++i) {
+	for (int i = 0; i < MAX_FILES; ++i) {
 		if(strcmp(name, fileNames[i]) == 0) {
 			char * buf;
 			simplefs_lseek(i, SEEK_SET, 0);
@@ -679,8 +669,8 @@ int check_prev_dir(int prevdesc, char dir[]){
 
 	char * buf;
 	simplefs_lseek(prevdesc, SEEK_SET, 0);
-	simplefs_read(prevdesc, buf, fileInfos[i][1]); //read prev to buf
-	for (int j = 0; j < fileInfos[i][1]; ++j) {
+	simplefs_read(prevdesc, buf, fileInfos[prevdesc][1]); //read prev to buf
+	for (int j = 0; j < fileInfos[prevdesc][1]; ++j) {
 		if (strcmp(fileNames[buf[j]], dir) == 0) { //dir found in prev
 			return buf[j];
 		}
