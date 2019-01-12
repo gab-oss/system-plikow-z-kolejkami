@@ -44,8 +44,27 @@ struct inodeFree
   struct inodeFree *next;
 }head;
 
-//void sortDescriptors();
 void updateMemory();
+
+//get file indexes in order as written in FS
+int* getSortedOrder()
+{
+	static int order[MAX_FILES];
+	int min = fileInfos[0][0];
+	for(int i = 0; i < MAX_FILES; i++)
+	{
+		order[i] = 0;
+		for(int j = 0; j < MAX_FILES; j++)
+		{
+			if(fileInfos[j][1] != 0 && fileInfos[j][0] > min && fileInfos[j][0] < fileInfos[order[i]])
+			{	
+				order[i] = j;
+				min = fileInfos[j][0];
+			}
+		}
+  }
+	return order;
+}
 
 //TODO: mutexy
 int simplefs_mount(char* name, int size) {
@@ -110,9 +129,10 @@ int simplefs_unmount(char* name)
 //TODO: mutexy, sortowanie
 void updateMemory()
 {
-  //sortDescriptors();
   int i = 0;
-  if(fileInfos[0][1] == 0)
+	int *ord = getSortedOrder();
+  
+	if(fileCount < 1)
   { 
 		//there are no files                                                                                                                          
     head.base = sizeof(int)+MAX_FILES*(INFO_SIZE+NAME_SIZE)+1;
@@ -122,16 +142,16 @@ void updateMemory()
   }
   else
   {
-  	if(fileInfos[0][0] == sizeof(int)+MAX_FILES*(INFO_SIZE+NAME_SIZE)+1)
+  	if(fileInfos[ord[0]][0] == sizeof(int)+MAX_FILES*(INFO_SIZE+NAME_SIZE)+1)
   	{
 			//first file is just after metadata
-  	  while(i < fileCount-1 && fileInfos[i][0] + fileInfos[i][1] == fileInfos[i+1][0])
+  	  while(i < fileCount-1 && fileInfos[ord[i]][0] + fileInfos[ord[i]][1] == fileInfos[ord[i+1]][0])
     	{
 				//find file followed by free memory
       	i++;
     	}
 			//position of first free memory segment
-    	head.base = fileInfos[i][0] + fileInfos[i][1];
+    	head.base = fileInfos[ord[i]][0] + fileInfos[ord[i]][1];
     	if (i == fileCount-1)
     	{
 				//all free memory follows last file
@@ -142,7 +162,7 @@ void updateMemory()
     	else
     	{
 				//there is free memory between files
-    	  head.size = fileInfos[i+1][0] - head.base;
+    	  head.size = fileInfos[ord[i+1]][0] - head.base;
     	  head.next = NULL;
     	}
   	}
@@ -150,7 +170,7 @@ void updateMemory()
   	{
 			//there is free memory between metadata and first file
   	  head.base = sizeof(int)+MAX_FILES*(INFO_SIZE+NAME_SIZE)+1;
-  	  head.size = fileInfos[0][0] - head.base;
+  	  head.size = fileInfos[ord[0]][0] - head.base;
   	}
   }
   
@@ -158,20 +178,20 @@ void updateMemory()
   //add free memory segments to list
 	for(i; i < fileCount; i++)
   {
-		if(fileInfos[i][0] + fileInfos[i][1] == fileInfos[i+1][0])
+		if(fileInfos[ord[i]][0] + fileInfos[ord[i]][1] == fileInfos[ord[i+1]][0])
 			//there is no free memory between files
 			continue;
 		
 		struct inodeFree *temp = malloc(sizeof(struct inodeFree));
-		temp->base = fileInfos[i][0] + fileInfos[i][1];
+		temp->base = fileInfos[ord[i]][0] + fileInfos[ord[i]][1];
 		if(temp->base > capacity) 
 			//no free memory after last file
 			break;
 		
-		if(i!=MAX_FILES-1 && fileInfos[i+1][1] != 0)
+		if(i!=MAX_FILES-1 && fileInfos[ord[i+1]][1] != 0)
 		{
 			//there are files after current one
-			temp->size = fileInfos[i+1][0] - temp->base;
+			temp->size = fileInfos[ord[i+1]][0] - temp->base;
 		}
 		else
 		{
@@ -186,68 +206,36 @@ void updateMemory()
 }
 
 //TODO: mutexy
-//sort files descriptors according to thier position in FS
-void sortDescriptors()
-{
-  char tempI[INFO_SIZE];
-  char tempN[NAME_SIZE];
-	char tempP;
-  for(int i = 0; i < fileCount; i++)
-  {
-    int min = i;
-  	for(int j = i; j < MAX_FILES; j++)
-  	{
-  		if(fileInfos[j][0] != 0 
-				&& (fileInfos[min][0] == 0 || fileInfos[min][0] > fileInfos[j][0])) 
-					min = j;
-  	}
-
-		//switch elements of fileInfos
-  	strncpy(tempI, fileInfos[i], INFO_SIZE);
-  	strncpy(fileInfos[i], fileInfos[min], INFO_SIZE);
-  	strncpy(fileInfos[min], tempI, INFO_SIZE);
-  	
-		//switch elements of fileNames
-  	strncpy(tempN, fileNames[i], NAME_SIZE);
-  	strncpy(fileNames[i], fileNames[min], NAME_SIZE);
-  	strncpy(fileNames[min], tempN, NAME_SIZE);
-
-		//switch elements of posInFile
-		tempP = posInFile[i];
-  	posInFile[i] = posInFile[min];
-  	posInFile[min] = tempP;
-  }
-}
-
-//TODO: mutexy
 void defragment()
 {
 	FILE *FS = fopen(FSAbsolutePath, "r+");
   if(FS == NULL) 
-		exit(1);
+		return 1;
+	
+	int *ord = getSortedOrder();
 	
   if(fileCount > 0)
   {
 		//write first file to buffer
-    char *buffer = malloc(fileInfos[0][1]);
-		fseek(FS, fileInfos[0][0], SEEK_SET);
-		fread(buffer, sizeof(char), fileInfos[0][1], FS);
+    char *buffer = malloc(fileInfos[ord[0]][1]);
+		fseek(FS, fileInfos[ord[0]][0], SEEK_SET);
+		fread(buffer, sizeof(char), fileInfos[ord[0]][1], FS);
 		
 		//move first file to after metadata
-  	fileInfos[0][0] = sizeof(int)+MAX_FILES*(INFO_SIZE+NAME_SIZE)+1;
-		fseek(FS, fileInfos[0][0], SEEK_SET);
-		fwrite(buffer, sizeof(char), fileInfos[0][1], FS);
+  	fileInfos[ord[0]][0] = sizeof(int)+MAX_FILES*(INFO_SIZE+NAME_SIZE)+1;
+		fseek(FS, fileInfos[ord[0]][0], SEEK_SET);
+		fwrite(buffer, sizeof(char), fileInfos[ord[0]][1], FS);
   }
 	for(int i = 1; i < fileCount; i++)
 	{
 		//move file to after previous one
-		char *buffer = malloc(fileInfos[i][1]);
-		fseek(FS, fileInfos[i][0], SEEK_SET);
-		fread(buffer, sizeof(char), fileInfos[i][1], FS);
+		char *buffer = malloc(fileInfos[ord[i]][1]);
+		fseek(FS, fileInfos[ord[i]][0], SEEK_SET);
+		fread(buffer, sizeof(char), fileInfos[ord[i]][1], FS);
 		
-  	fileInfos[i][0] = fileInfos[i-1][0]+fileInfos[i-1][1]+1;
-		fseek(FS, fileInfos[i][0], SEEK_SET);
-		fwrite(buffer, sizeof(char), fileInfos[i][1], FS);
+  	fileInfos[ord[i]][0] = fileInfos[ord[i-1]][0]+fileInfos[ord[i-1]][1]+1;
+		fseek(FS, fileInfos[ord[i]][0], SEEK_SET);
+		fwrite(buffer, sizeof(char), fileInfos[ord[i]][1], FS);
 	}
 
 	//update metadata	
@@ -296,13 +284,12 @@ int simplefs_unlink(char* name)
 		  memset(fileNames[i], 0, NAME_SIZE);
 		  memset(fileInfos[i], 0, INFO_SIZE);
 		  
-		  sortDescriptors();
 		  updateMemory();
 		  
 			//save changes to FS
 		  FILE *FS = fopen(FSAbsolutePath, "r+");
   		if(FS == NULL) 
-				exit(1);
+				return 1;
 		  
 			//update metadata
 		  fseek(FS, sizeof(int), SEEK_SET);
@@ -324,7 +311,7 @@ int simplefs_mkdir(char* name)
 		return -1;
 
 	//check if directory already exists
-	for(int i = 0; i < fileCount; i++)
+	for(int i = 0; i < MAX_FILES; i++)
 	{
 	  if(strcmp(name, fileNames[i]) == 0 && fileInfos[i][2] == 1) 
 		//mutex jak w open?
@@ -337,18 +324,25 @@ int simplefs_mkdir(char* name)
 	//open FS file
 	FILE *FS = fopen(FSAbsolutePath, "r+");
   if(FS == NULL) 
-		exit(1);
+		return 1;
+
+	int i;
+	for(int i = 0; i < MAX_FILES; i++)
+	{
+		//find empty descriptor
+		if(fileInfos[i][1] == 0)
+			break;
+	}
 
 	//file metadata
-	strcpy(fileNames[fileCount], name);
-	fileInfos[fileCount][0] = temp->base;	//position
-	fileInfos[fileCount][1] = 1;					//file length
-	fileInfos[fileCount][2] = 1;					//directory
-	fileInfos[fileCount][3] = 1;					//read permission
-	fileInfos[fileCount][4] = 1;					//write permission
+	strcpy(fileNames[i], name);
+	fileInfos[i][0] = temp->base;	//position
+	fileInfos[i][1] = 1;					//file length
+	fileInfos[i][2] = 1;					//directory
+	fileInfos[i][3] = 1;					//read permission
+	fileInfos[i][4] = 1;					//write permission
 
 	fileCount++;
-	sortDescriptors();
 	updateMemory();
 	freeMemory -= 1;
 	
@@ -370,7 +364,7 @@ int simplefs_creat(char* name, int mode)
 		return -1;
 
 	//check if file already exists
-	for(int i = 0; i < fileCount; i++)
+	for(int i = 0; i < MAX_FILES; i++)
 	{
 	  if(strcmp(name, fileNames[i]) == 0 && fileInfos[i][2] == 0) 
 		//mutex jak w open?
@@ -383,7 +377,7 @@ int simplefs_creat(char* name, int mode)
 	//open FS file
 	FILE *FS = fopen(FSAbsolutePath, "r+");
   if(FS == NULL) 
-		exit(1);
+		return 1;
 	
 	//permissions
 	char readPerm = 0, writePerm = 0;
@@ -392,16 +386,23 @@ int simplefs_creat(char* name, int mode)
 	if(mode == FS_WRONLY || mode == FS_RDWR)
 		writePerm = 1;
 
+	int i;
+	for(int i = 0; i < MAX_FILES; i++)
+	{
+		//find empty descriptor
+		if(fileInfos[i][1] == 0)
+			break;
+	}
+
 	//file metadata
-	strcpy(fileNames[fileCount], name);
-	fileInfos[fileCount][0] = temp->base;	//position
-	fileInfos[fileCount][1] = 1;					//file length
-	fileInfos[fileCount][2] = 0;					//not a directory
-	fileInfos[fileCount][3] = readPerm;		//read permission
-	fileInfos[fileCount][4] = writePerm;	//write permission
+	strcpy(fileNames[i], name);
+	fileInfos[i][0] = temp->base;	//position
+	fileInfos[i][1] = 1;					//file length
+	fileInfos[i][2] = 0;					//not a directory
+	fileInfos[i][3] = readPerm;		//read permission
+	fileInfos[i][4] = writePerm;	//write permission
 
 	fileCount++;
-	sortDescriptors();
 	updateMemory();
 	freeMemory -= 1;
 	
@@ -487,7 +488,6 @@ int simplefs_write(int fd, char* buf, int len)
 			fileInfos[fd][1] += sizeinc;
 
 			updateMemory();
-			sortDescriptors();
 			return 0;
 		}
 		temp = temp->next;
@@ -511,7 +511,6 @@ int simplefs_write(int fd, char* buf, int len)
 			posInFile[fd] += sizeof(char) * len;
 
 			updateMemory();
-			sortDescriptors();
 			return 0;
 		}
 
@@ -525,7 +524,6 @@ int simplefs_write(int fd, char* buf, int len)
 
 int simplefs_lseek(int fd, int whence, int offset)
 {
-
 	if (whence == SEEK_SET)
 		posInFile[fd] += fileInfos[fd][0] + offset;
 	else if (whence == SEEK_CUR)
@@ -553,7 +551,6 @@ int simplefs_ls(char name[]){
 			return 0;
 		}
 	}
-
 	//directory not found
 	return -1;
 }
