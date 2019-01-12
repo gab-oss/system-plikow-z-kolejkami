@@ -282,54 +282,48 @@ int simplefs_close(int fd) {
 int simplefs_unlink(char* name)
 {
 	char filename[NAME_SIZE]; 
-	if (check_path(name, filename) == -1) { //name = path
+	fileId = check_path(name, filename);
+	if (fileId == -1 || (fileInfos[fileId][2] == 1 && fileInfos[fileId][1] == 1)) {
+		//no file or file is non-empty dir
 		return -1;
 	}
-
-	strcpy(filename, name); //name = filename
-
-	for(int i = 0; i < MAX_FILES; i++)
-	{
-		if(strcmp(name, fileNames[i]) == 0)
-		{
-			//clear filename and info of deleted file
-		  	fileCount--;
-		  	freeMemory += fileInfos[i][1];
-		  	memset(fileNames[i], 0, NAME_SIZE);
-		  	memset(fileInfos[i], 0, INFO_SIZE);
-		  
-		  	updateMemory();
-		  
-			//save changes to FS
-		  	FILE *FS = fopen(FSAbsolutePath, "r+");
-  			if(FS == NULL) 
-				return 1;
-		  
-			updateMetadata(FS);
 	
-			fclose(FS);
-			return 0;
-		}
-	}
+	//clear filename and info of deleted file
+	fileCount--;
+	freeMemory += fileInfos[fileId][1];
+	memset(fileNames[fileId], 0, NAME_SIZE);
+	memset(fileInfos[fileId], 0, INFO_SIZE);
+	
+	updateMemory();
+	
+	//save changes to FS
+	FILE *FS = fopen(FSAbsolutePath, "r+");
+	if(FS == NULL) 
+		return 1;
+	
+	updateMetadata(FS);
+
+	fclose(FS);
+	return 0;
+
+
 }
 
 int simplefs_mkdir(char* name)
 {
 	char filename[NAME_SIZE];
-	if (create_path(name , filename) == -1) //name = path, filename = resulting filename
+	if (check_path(name , filename) == -1) //name = path, filename = resulting filename
 		return -1;
 		
-	strcpy(filename, name); //name = resulting filename
-
-	if(strlen(name) > NAME_SIZE || fileCount >= MAX_FILES || freeMemory < 1)
+	if(strlen(filename) > NAME_SIZE || fileCount >= MAX_FILES || freeMemory < 1)
 		return -1;
 
 	//check if directory already exists
 	for(int i = 0; i < MAX_FILES; i++)
 	{
-	  if(strcmp(name, fileNames[i]) == 0 && fileInfos[i][2] == 1) 
+	  if(strcmp(filename, fileNames[i]) == 0 && fileInfos[i][2] == 1) 
 		//mutex jak w open?
-			return i;
+		return i;
 	}
 
 	//find free memory for file
@@ -337,7 +331,7 @@ int simplefs_mkdir(char* name)
 
 	//open FS file
 	FILE *FS = fopen(FSAbsolutePath, "r+");
-  if(FS == NULL) 
+  	if(FS == NULL) 
 		return 1;
 
 	int i;
