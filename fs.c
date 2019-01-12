@@ -274,7 +274,69 @@ void defragment()
 // }
 
 int simplefs_open(char* name, int mode) {
+	char filename[NAME_SIZE];
+	char prevname[NAME_SIZE]; //previous dir in path
+	int prevdesc = -1; //home
+	char dirname[NAME_SIZE];
+	int dirdesc = -1;
 
+	n_i = 0, f_i = 0; //name i, filename i
+
+	while (name[n_i] != '\0'){
+		if (f_i >= NAME_SIZE) //one of the names in the path is too long
+			return -1;
+
+		if (name[n_i] == '/') { //directory name read to the filename array
+			filename[f_i] = '\0'; //close string
+			if (prevdesc == -1) { //top directory
+				for (int i = 0; i < fileCount; ++i) {
+					if (strcmp(filename, fileNames[i]) == 0) { //dir existis
+						prevdesc = dirdesc;
+						strcpy(dirdesc, prevdesc);
+						dirdesc = i;
+						strcpy(filename, dirname);
+						f_i = 0;
+						break;
+					}
+					if (i == fileCount - 1)
+						return -1;
+				}			
+			}
+			else {
+				if (check_prev_dir(prevdesc, filename)) { //check if dir is in prev dir
+					prevdesc = dirdesc;
+					strcpy(dirdesc, prevdesc);
+					dirdesc = check_prev_dir(prevdesc, filename);
+					strcpy(filename, dirname);
+					f_i = 0;
+				}
+				else {
+					return -1;
+				}
+			}
+		}
+		else {
+			filename[f_i] = name[n_i]; //read next character to the filename
+			++f_i;
+		}
+
+		++n_i;
+	}
+
+	filename[f_i] = '\0'; //close filename
+
+	//find fd in directory file
+	char buf[NAME_SIZE];
+	fseek(file, fileInfos[dirdesc][0], SEEK_SET);
+	fread(buf, fileInfos[fd][1], 1, file);
+
+	for (int j = 0; j < fileInfos[i][1]; ++j) {
+		if (strcmp(fileNames[buf[j]], filename) == 0) { //file found in dir
+			return j;
+		}
+	}
+
+	return -1;
 }
 
 int simplefs_close(int fd) {
