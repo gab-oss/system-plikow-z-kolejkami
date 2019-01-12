@@ -267,7 +267,7 @@ int simplefs_open(char* name, int mode) {
 
 	char filename[NAME_SIZE];
 	int fileId = check_path(name, filename);
-	if (fileId == -1 || fileInfos[fileId][2] == 1) {
+	if (fileId < 0 || fileInfos[fileId][2] == 1) {
 		//no file or file is dir
 		return -1;
 	}
@@ -365,28 +365,18 @@ int simplefs_mkdir(char* name)
 int simplefs_creat(char* name, int mode) //name is a full path
 {
 	char filename[NAME_SIZE];
-	if (create_path(name , filename) == -1) //name = path, filename = resulting filename
+	if (check_path(name, filename) != -2) //name = path, filename = resulting filename
 		return -1;
-
-	strcpy(filename, name); //name = resulting filename
 
 	if(strlen(name) > NAME_SIZE || fileCount >= MAX_FILES || freeMemory < 1)
 		return -1;
-
-	//check if file already exists
-	for(int i = 0; i < MAX_FILES; i++)
-	{
-	  if(strcmp(name, fileNames[i]) == 0 && fileInfos[i][2] == 0) 
-		//mutex jak w open?
-			return i;
-	}
 
 	//find free memory for file
 	struct inodeFree *temp = &head;
 
 	//open FS file
 	FILE *FS = fopen(FSAbsolutePath, "r+");
-  if(FS == NULL) 
+  	if(FS == NULL) 
 		return 1;
 	
 	//permissions
@@ -464,7 +454,7 @@ int simplefs_write(int fd, char* buf, int len)
 	//first position after file
 	int eofpos = fileInfos[fd][0] + fileInfos[fd][1];
 
-  FILE * file = fopen(FSAbsolutePath, "r+");
+  	FILE * file = fopen(FSAbsolutePath, "r+");
 
 	//size from current position to eof
 	int restfile = fileInfos[fd][1] - fileInfos[fd][0] - posInFile[fd];
@@ -536,7 +526,7 @@ int simplefs_lseek(int fd, int whence, int offset)
 int simplefs_ls(char name[]){
 
 	char filename[NAME_SIZE]; 
-	if (check_path(name, filename) == -1) { //name = path
+	if (check_path(name, filename) < 0) { //name = path
 		return -1;
 	}
 
@@ -561,7 +551,9 @@ int simplefs_ls(char name[]){
 
 int check_prev_dir(int prevdesc, char * dir){
 	//check if previous directory contains dir and return dirdesc
-	if (prevdesc == -1) { //prev is home
+	if (prevdesc < 0) { //prev is home
+		if(strcmp(dir, fileNames[0]))
+			return 0;
 		return -1;
 	}
 
@@ -576,66 +568,6 @@ int check_prev_dir(int prevdesc, char * dir){
 	}
 
 	return -1;
-}
-
-int create_path(char * name, char * _filename) {
-	char filename[NAME_SIZE];
-	char prevname[NAME_SIZE]; //previous dir in path
-	int prevdesc = -1; //home
-	char dirname[NAME_SIZE];
-	int dirdesc = -1;
-
-	int n_i = 0, f_i = 0; //name i, filename i
-
-	while (name[n_i] != '\0'){
-		if (f_i >= NAME_SIZE) //one of the names in the path is too long
-			return -1;
-
-		if (name[n_i] == '/') { //directory name read to the filename array
-			filename[f_i] = '\0'; //close string
-			if (prevdesc == -1) { //top directory
-				for (int i = 0; i < fileCount; ++i) {
-					if (strcmp(filename, fileNames[i]) == 0) { //dir existis
-						dirdesc = i;
-					}
-					else {					
-						dirdesc = simplefs_mkdir(filename);
-					}
-				}
-			}
-			else {
-				if (check_prev_dir(prevdesc, filename)) {
-					dirdesc = check_prev_dir(prevdesc, filename);
-				}
-				else {
-				//	get full path of the current directory
-					char subbuff[n_i + 2];
-					memcpy(subbuff, name, n_i + 1 );
-					subbuff[n_i + 1] = '\0';
-
-					dirdesc = simplefs_mkdir(subbuff);
-				}
-			}
-
-			strcpy(filename, dirname);
-			
-			prevdesc = dirdesc;
-			strcpy(dirname, prevname);
-
-			f_i = 0; // read next dir/filename
-		}
-		else {
-			filename[f_i] = name[n_i]; //read next character to the filename
-			++f_i;
-		}
-
-		++n_i;
-	}
-
-	filename[f_i] = '\0'; //close filename
-
-	strcpy(filename, _filename);
-	return 0;
 }
 
 int check_path(char * name, char * _filename) 
@@ -670,7 +602,7 @@ int check_path(char * name, char * _filename)
 			else 
 			{
 				int fileId = check_prev_dir(dirdesc, filename);
-				if (fileId != 0) 
+				if (fileId > 0) 
 				{ //check if dir is in prev dir
 					dirdesc = fileId;
 					f_i = 0;
@@ -688,10 +620,18 @@ int check_path(char * name, char * _filename)
 
 		++n_i;
 	}
-
 	filename[f_i] = '\0'; //close filename
 	strcpy(_filename, filename);
-	return check_prev_dir(dirdesc, filename);
+
+	if(dirdesc == -1)
+		return -1;
+
+	int fileId = check_prev_dir(dirdesc, filename);
+	if(fileId > 0)
+		return fileId;
+	else
+		return -2;
+	return -1;
 }
 
 #endif //FS_H
