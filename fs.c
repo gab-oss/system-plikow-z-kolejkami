@@ -365,8 +365,64 @@ int simplefs_mkdir(char* name)
 	return 0;
 }
 
-int simplefs_creat(char* name, int mode)
+int simplefs_creat(char* name, int mode) //name is a full path
 {
+
+	char filename[NAME_SIZE];
+	char prevname[NAME_SIZE]; //previous dir in path
+	int prevdesc = -1; //home
+	char dirname[NAME_SIZE];
+	int dirdesc = -1;
+
+	n_i = 0, f_i = 0; //name i, filename i
+
+	while (name[n_i] != '\0'){
+		if (f_i >= NAME_SIZE) //one of the names in the path is too long
+			return -1;
+
+		if (name[n_i] == '/') { //directory name read to the filename array
+			filename[f_i] = '\0'; //close string
+			if (prevdesc == -1) { //top directory
+				for (int i = 0; i < fileCount; ++i) {
+					if (strcmp(filename, fileNames[i]) == 0) { //dir existis
+						dirdesc = i;
+					}
+					else {					
+						dirdesc = mkdir(filename);
+					}
+				}
+			}
+			else {
+				if (check_prev_dir(prevdesc, filename)) {
+					dirdesc = check_prev_dir(prevdesc, filename);
+				}
+				else {
+				//	get full path of the current directory
+					char subbuff[n_i + 2];
+					memcpy(subbuff, name, n_i + 1 );
+					subbuff[n_1 + 1] = '\0';
+
+					dirdesc = mkdir(subbuff);
+				}
+			}
+
+			strcpy(filename, dirname);
+			
+			prevdesc = dirdesc;
+			strcpy(dirname, prevname);
+
+			f_i = 0; // read next dir/filename
+		}
+		else {
+			filename[f_i] = name[n_i]; //read next character to the filename
+			++f_i;
+		}
+
+		++n_i;
+	}
+
+	strcpy(filename, name);
+
 	if(strlen(name) > NAME_SIZE || fileCount >= MAX_FILES || freeMemory < 1)
 		return -1;
 
@@ -385,7 +441,7 @@ int simplefs_creat(char* name, int mode)
 	FILE *FS = fopen(FSAbsolutePath, "r+");
   if(FS == NULL) 
 		exit(1);
-	
+
 	//permissions
 	char readPerm = 0, writePerm = 0;
 	if(mode == FS_RDONLY || mode == FS_RDWR)
@@ -405,7 +461,7 @@ int simplefs_creat(char* name, int mode)
 	sortDescriptors();
 	updateMemory();
 	freeMemory -= 1;
-	
+
 	//update metadata
 	fseek(FS, sizeof(int), SEEK_SET);
 	for(int i = 0; i < MAX_FILES; i++)
@@ -546,15 +602,33 @@ int simplefs_ls(char name[]){
 			simplefs_lseek(i, SEEK_SET, 0);
 			simplefs_read(i, buf, fileInfos[i][1]);
 
-			for (int j = 0; j < sizeof(*buf); ++j){
-				std::cout << fileNames[buf[j]] << std::endl;
+			for (int j = 0; j < fileInfos[i][1]; ++j){
+				printf("%s \n", fileNames[buf[j]]);
 			}
-			
+
 			return 0;
 		}
 	}
 
 	//directory not found
+	return -1;
+}
+
+int check_prev_dir(int prevdesc, char dir[]){
+	//check if previous directory contains dir and return dirdesc
+	if (prevdesc == -1) { //prev is home
+		return 0;
+	}
+
+	char * buf;
+	simplefs_lseek(prevdesc, SEEK_SET, 0);
+	simplefs_read(prevdesc, buf, fileInfos[i][1]); //read prev to buf
+	for (int j = 0; j < fileInfos[i][1]; ++j) {
+		if (strcmp(fileNames[buf[j]], dir) == 0) { //dir found in prev
+			return buf[j];
+		}
+	}
+
 	return -1;
 }
 
