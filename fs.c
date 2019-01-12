@@ -44,16 +44,20 @@ struct inodeFree
   struct inodeFree *next;
 }head;
 
-void sortDescriptors();
+//void sortDescriptors();
 void updateMemory();
 
 //TODO: mutexy
 int simplefs_mount(char* name, int size) {
 {
+	if( access( name, F_OK ) != -1 )
+		readFS(name);
+		return 0;
+
   strcpy(FSAbsolutePath, name);
 	//check if enough space for metadata
   if(size < sizeof(int)+MAX_FILES*(INFO_SIZE+NAME_SIZE))
-		exit(1);
+		return 1;
 
   capacity = size;
   freeMemory = capacity - (sizeof(int)+MAX_FILES*(INFO_SIZE+NAME_SIZE));
@@ -63,13 +67,8 @@ int simplefs_mount(char* name, int size) {
 	//write size of FS to metadata
   fwrite(&size, sizeof(int), 1, file);
   
-	char buf = 0;
-	//fill FS with 0s
-  for(int i = 0; i < size - sizeof(int); i++)
-  {
-  	fwrite(&buf, sizeof(char), sizeof(buf), file);
-  }
   fclose(file);
+	return 0;
 }
 
 //TODO: mutexy
@@ -108,10 +107,10 @@ int simplefs_unmount(char* name)
   return remove(name);
 }
 
-//TODO: mutexy
+//TODO: mutexy, sortowanie
 void updateMemory()
 {
-  sortDescriptors();
+  //sortDescriptors();
   int i = 0;
   if(fileInfos[0][1] == 0)
   { 
