@@ -263,56 +263,13 @@ void defragment()
 // }
 
 int simplefs_open(char* name, int mode) {
-	char filename[NAME_SIZE];
-	char prevname[NAME_SIZE]; //previous dir in path
-	int prevdesc = -1; //home
-	char dirname[NAME_SIZE];
-	int dirdesc = -1;
 
-	n_i = 0, f_i = 0; //name i, filename i
-
-	while (name[n_i] != '\0'){
-		if (f_i >= NAME_SIZE) //one of the names in the path is too long
-			return -1;
-
-		if (name[n_i] == '/') { //directory name read to the filename array
-			filename[f_i] = '\0'; //close string
-			if (prevdesc == -1) { //top directory
-				for (int i = 0; i < fileCount; ++i) {
-					if (strcmp(filename, fileNames[i]) == 0) { //dir existis
-						prevdesc = dirdesc;
-						strcpy(dirdesc, prevdesc);
-						dirdesc = i;
-						strcpy(filename, dirname);
-						f_i = 0;
-						break;
-					}
-					if (i == fileCount - 1)
-						return -1;
-				}			
-			}
-			else {
-				if (check_prev_dir(prevdesc, filename)) { //check if dir is in prev dir
-					prevdesc = dirdesc;
-					strcpy(dirdesc, prevdesc);
-					dirdesc = check_prev_dir(prevdesc, filename);
-					strcpy(filename, dirname);
-					f_i = 0;
-				}
-				else {
-					return -1;
-				}
-			}
-		}
-		else {
-			filename[f_i] = name[n_i]; //read next character to the filename
-			++f_i;
-		}
-
-		++n_i;
+	char filename[NAME_SIZE]; 
+	if (check_path(name, filename) == -1) { //name = path
+		return -1;
 	}
 
-	filename[f_i] = '\0'; //close filename
+	strcpy(filename, name); //name = filename
 
 	//find fd in directory file
 	char buf[NAME_SIZE];
@@ -338,6 +295,13 @@ int simplefs_close(int fd) {
 //TODO: mutexy
 int simplefs_unlink(char* name)
 {
+	char filename[NAME_SIZE]; 
+	if (check_path(name, filename) == -1) { //name = path
+		return -1;
+	}
+
+	strcpy(filename, name); //name = filename
+
 	for(int i = 0; i < MAX_FILES; i++)
 	{
 		if(strcmp(name, fileNames[i]) == 0)
@@ -371,6 +335,12 @@ int simplefs_unlink(char* name)
 
 int simplefs_mkdir(char* name)
 {
+	char filename[NAME_SIZE];
+	if (create_path(name , filename) == -1) //name = path, filename = resulting filename
+		return -1;
+		
+	strcpy(filename, name); //name = resulting filename
+
 	if(strlen(name) > NAME_SIZE || fileCount >= MAX_FILES || freeMemory < 1)
 		return -1;
 
@@ -419,59 +389,10 @@ int simplefs_mkdir(char* name)
 int simplefs_creat(char* name, int mode) //name is a full path
 {
 	char filename[NAME_SIZE];
-	char prevname[NAME_SIZE]; //previous dir in path
-	int prevdesc = -1; 				//home
-	char dirname[NAME_SIZE];
-	int dirdesc = -1;
+	if (create_path(name , filename) == -1) //name = path, filename = resulting filename
+		return -1;
 
-	n_i = 0, f_i = 0; //name i, filename i
-
-	while (name[n_i] != '\0'){
-		if (f_i >= NAME_SIZE) //one of the names in the path is too long
-			return -1;
-
-		if (name[n_i] == '/') { //directory name read to the filename array
-			filename[f_i] = '\0'; //close string
-			if (prevdesc == -1) { //top directory
-				for (int i = 0; i < fileCount; ++i) {
-					if (strcmp(filename, fileNames[i]) == 0) { //dir exists
-						dirdesc = i;
-					}
-					else {					
-						dirdesc = mkdir(filename);
-					}
-				}
-			}
-			else {
-				if (check_prev_dir(prevdesc, filename)) {
-					dirdesc = check_prev_dir(prevdesc, filename);
-				}
-				else {
-				//	get full path of the current directory
-					char subbuff[n_i + 2];
-					memcpy(subbuff, name, n_i + 1 );
-					subbuff[n_1 + 1] = '\0';
-
-					dirdesc = mkdir(subbuff);
-				}
-			}
-
-			strcpy(filename, dirname);
-			
-			prevdesc = dirdesc;
-			strcpy(dirname, prevname);
-
-			f_i = 0; // read next dir/filename
-		}
-		else {
-			filename[f_i] = name[n_i]; //read next character to the filename
-			++f_i;
-		}
-
-		++n_i;
-	}
-
-	strcpy(filename, name);
+	strcpy(filename, name); //name = resulting filename
 
 	if(strlen(name) > NAME_SIZE || fileCount >= MAX_FILES || freeMemory < 1)
 		return -1;
@@ -644,7 +565,14 @@ int simplefs_lseek(int fd, int whence, int offset)
 }
 
 int simplefs_ls(char name[]){
-	for (int i = 0; i < MAX_FILES; ++i) {
+
+	char filename[NAME_SIZE]; 
+	if (check_path(name, filename) == -1) { //name = path
+		return -1;
+	}
+
+	strcpy(filename, name); //name = filename
+	for (int i = 0; i < fileCount; ++i) {
 		if(strcmp(name, fileNames[i]) == 0) {
 			char * buf;
 			simplefs_lseek(i, SEEK_SET, 0);
@@ -677,6 +605,122 @@ int check_prev_dir(int prevdesc, char dir[]){
 	}
 
 	return -1;
+}
+
+int create_path(char * name, char * _filename) {
+	char filename[NAME_SIZE];
+	char prevname[NAME_SIZE]; //previous dir in path
+	int prevdesc = -1; //home
+	char dirname[NAME_SIZE];
+	int dirdesc = -1;
+
+	n_i = 0, f_i = 0; //name i, filename i
+
+	while (name[n_i] != '\0'){
+		if (f_i >= NAME_SIZE) //one of the names in the path is too long
+			return -1;
+
+		if (name[n_i] == '/') { //directory name read to the filename array
+			filename[f_i] = '\0'; //close string
+			if (prevdesc == -1) { //top directory
+				for (int i = 0; i < fileCount; ++i) {
+					if (strcmp(filename, fileNames[i]) == 0) { //dir existis
+						dirdesc = i;
+					}
+					else {					
+						dirdesc = mkdir(filename);
+					}
+				}
+			}
+			else {
+				if (check_prev_dir(prevdesc, filename)) {
+					dirdesc = check_prev_dir(prevdesc, filename);
+				}
+				else {
+				//	get full path of the current directory
+					char subbuff[n_i + 2];
+					memcpy(subbuff, name, n_i + 1 );
+					subbuff[n_1 + 1] = '\0';
+
+					dirdesc = mkdir(subbuff);
+				}
+			}
+
+			strcpy(filename, dirname);
+			
+			prevdesc = dirdesc;
+			strcpy(dirname, prevname);
+
+			f_i = 0; // read next dir/filename
+		}
+		else {
+			filename[f_i] = name[n_i]; //read next character to the filename
+			++f_i;
+		}
+
+		++n_i;
+	}
+
+	filename[f_i] = '\0'; //close filename
+
+	strcpy(filename, _filename);
+	return 0;
+}
+
+int check_path(char * name, char * _filename) {
+	char filename[NAME_SIZE];
+	char prevname[NAME_SIZE]; //previous dir in path
+	int prevdesc = -1; //home
+	char dirname[NAME_SIZE];
+	int dirdesc = -1;
+
+	n_i = 0, f_i = 0; //name i, filename i
+
+	while (name[n_i] != '\0'){
+		if (f_i >= NAME_SIZE) //one of the names in the path is too long
+			return -1;
+
+		if (name[n_i] == '/') { //directory name read to the filename array
+			filename[f_i] = '\0'; //close string
+			if (prevdesc == -1) { //top directory
+				for (int i = 0; i < fileCount; ++i) {
+					if (strcmp(filename, fileNames[i]) == 0) { //dir existis
+						prevdesc = dirdesc;
+						strcpy(dirdesc, prevdesc);
+						dirdesc = i;
+						strcpy(filename, dirname);
+						f_i = 0;
+						break;
+					}
+					if (i == fileCount - 1)
+						return -1;
+				}			
+			}
+			else {
+				if (check_prev_dir(prevdesc, filename)) { //check if dir is in prev dir
+					prevdesc = dirdesc;
+					strcpy(dirdesc, prevdesc);
+					dirdesc = check_prev_dir(prevdesc, filename);
+					strcpy(filename, dirname);
+					f_i = 0;
+				}
+				else {
+					return -1;
+				}
+			}
+		}
+		else {
+			filename[f_i] = name[n_i]; //read next character to the filename
+			++f_i;
+		}
+
+		++n_i;
+	}
+
+	filename[f_i] = '\0'; //close filename
+
+	strcpy(filename, _filename);
+	return 0;
 }
 
 #endif //FS_H
