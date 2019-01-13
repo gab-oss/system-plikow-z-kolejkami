@@ -17,9 +17,72 @@
 #define FS_WRONLY               2	// 010 - Write only
 #define FS_RDWR                 3	// 011 - Read and write
 
-// Error codes
-#define SFS_LOCK_MUTEX_ERROR    -1
-#define SFS_UNLOCK_MUTEX_ERROR  -2
+// ========= MESSAGE MUTEX START ===========
+
+//#define SFS_QUEUE_KEY "simplefs_queue"
+//
+//#define SFSQ_OK                 0
+//#define SFSQ_MSGGET_ERROR       -1
+//#define SFSQ_MSGRCV_ERROR       -2
+//#define SFSQ_MSGSND_ERROR       -3
+//#define SFSQ_MSGCREAT_ERROR     -4
+//
+///*
+// * Message type for queue messages.
+// */
+//struct sfs_msg {
+//    long fd;
+//};
+//
+///*
+// * Blocks the execution of the process until mutex for a file with
+// * with file descriptor fd is unlocked.
+// * Returns SFSQ_OK if no errors occurred.
+// */
+//int mutex_lock(int fd) {
+//    int qid = msgget(SFS_QUEUE_KEY, 0666);
+//    if(qid < 0) {
+//        return SFSQ_MSGGET_ERROR;
+//    }
+//    struct sfs_msg message;
+//    ssize_t ret = msgrcv(qid, &message, sizeof(message), fd, MSG_NOERROR);
+//    if(ret < 0) {
+//        return SFSQ_MSGRCV_ERROR;
+//    }
+//    return SFSQ_OK;
+//}
+//
+///*
+// * Unblocks mutex access to the given file with file descriptor fd.
+// * Returns SFSQ_OK if no errors occurred.
+// */
+//int mutex_unlock(int fd) {
+//    int qid = msgget(SFS_QUEUE_KEY, 0666);
+//    if(qid < 0) {
+//        return SFSQ_MSGGET_ERROR;
+//    }
+//    struct sfs_msg message;
+//    message.fd = fd;
+//    ssize_t ret = msgsnd(qid, &message, sizeof(message), MSG_NOERROR);
+//    if(ret < 0) {
+//        return SFSQ_MSGSND_ERROR;
+//    }
+//    return SFSQ_OK;
+//}
+//
+///*
+// * Initialises a message queue for simple fs management.
+// * Returns SFSQ_OK if no errors occurred.
+// */
+//int queue_init() {
+//    int qid = msgget(SFS_QUEUE_KEY, 0666 | IPC_CREAT);
+//    if(qid < 0) {
+//        return SFSQ_MSGCREAT_ERROR;
+//    }
+//}
+
+
+// ========= MESSAGE MUTEX END ===========
 
 int capacity;
 int freeMemory;
@@ -272,17 +335,17 @@ int simplefs_open(char* name, int mode) {
 		return -1;
 	}
 
-	if(mutex_lock(fileId) != SFSQ_OK) {
-        return SFS_UNLOCK_MUTEX_ERROR;
-    }
+//	if(mutex_lock(fileId) != SFSQ_OK) {
+//        return SFS_UNLOCK_MUTEX_ERROR;
+//    }
 
 	return fileId;
 }
 
 int simplefs_close(int fd) {
-    if(mutex_unlock(fd) != 0) {
-        return SFS_UNLOCK_MUTEX_ERROR;
-    }
+//    if(mutex_unlock(fd) != 0) {
+//        return SFS_UNLOCK_MUTEX_ERROR;
+//    }
     return 0;
 }
 
