@@ -1,11 +1,15 @@
 #ifndef FS_H
 #define FS_H
 
-#include<stdlib.h>
-#include<stdio.h>
-#include<string.h>
-#include<unistd.h>
-#include<sys/stat.h>
+#include <stdlib.h>
+#include <stdio.h>
+#include <string.h>
+#include <unistd.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <sys/ipc.h>
+#include <sys/msg.h>
+
 
 // Global constants
 #define MAX_FILES     16
@@ -22,67 +26,84 @@
 
 // ========= MESSAGE MUTEX START ===========
 
-//#define SFS_QUEUE_KEY "simplefs_queue"
-//
-//#define SFSQ_OK                 0
-//#define SFSQ_MSGGET_ERROR       -1
-//#define SFSQ_MSGRCV_ERROR       -2
-//#define SFSQ_MSGSND_ERROR       -3
-//#define SFSQ_MSGCREAT_ERROR     -4
-//
-///*
-// * Message type for queue messages.
-// */
-//struct sfs_msg {
-//    long fd;
-//};
-//
-///*
-// * Blocks the execution of the process until mutex for a file with
-// * with file descriptor fd is unlocked.
-// * Returns SFSQ_OK if no errors occurred.
-// */
-//int mutex_lock(int fd) {
-//    int qid = msgget(SFS_QUEUE_KEY, 0666);
-//    if(qid < 0) {
-//        return SFSQ_MSGGET_ERROR;
-//    }
-//    struct sfs_msg message;
-//    ssize_t ret = msgrcv(qid, &message, sizeof(message), fd, MSG_NOERROR);
-//    if(ret < 0) {
-//        return SFSQ_MSGRCV_ERROR;
-//    }
-//    return SFSQ_OK;
-//}
-//
-///*
-// * Unblocks mutex access to the given file with file descriptor fd.
-// * Returns SFSQ_OK if no errors occurred.
-// */
-//int mutex_unlock(int fd) {
-//    int qid = msgget(SFS_QUEUE_KEY, 0666);
-//    if(qid < 0) {
-//        return SFSQ_MSGGET_ERROR;
-//    }
-//    struct sfs_msg message;
-//    message.fd = fd;
-//    ssize_t ret = msgsnd(qid, &message, sizeof(message), MSG_NOERROR);
-//    if(ret < 0) {
-//        return SFSQ_MSGSND_ERROR;
-//    }
-//    return SFSQ_OK;
-//}
-//
-///*
-// * Initialises a message queue for simple fs management.
-// * Returns SFSQ_OK if no errors occurred.
-// */
-//int queue_init() {
-//    int qid = msgget(SFS_QUEUE_KEY, 0666 | IPC_CREAT);
-//    if(qid < 0) {
-//        return SFSQ_MSGCREAT_ERROR;
-//    }
-//}
+#define SFS_QUEUE_KEY           "/simplefs_key"
+
+#define SFSQ_OK                 0
+#define SFSQ_MSGGET_ERROR       -1
+#define SFSQ_MSGRCV_ERROR       -2
+#define SFSQ_MSGSND_ERROR       -3
+#define SFSQ_MSGCREAT_ERROR     -4
+#define SFSQ_MSGDESTROY_ERROR   -5
+
+/*
+ * Message type for queue messages.
+ *
+ * type=1 for filesystem mutex
+ */
+struct sfs_msg {
+    long type;
+};
+
+/*
+ * Blocks the execution of the process until mutex for a file with
+ * with file descriptor fd is unlocked.
+ * Returns SFSQ_OK if no errors occurred.
+ */
+int mutex_lock() {
+    key_t key = ftok(SFS_QUEUE_KEY, 65);
+    int qid = msgget(key, 0666 | IPC_CREAT);
+    if(qid < 0) {
+        return SFSQ_MSGGET_ERROR;
+    }
+    struct sfs_msg message;
+    ssize_t ret = msgrcv(qid, &message, sizeof(message), 1, MSG_NOERROR);
+    if(ret < 0) {
+        return SFSQ_MSGRCV_ERROR;
+    }
+    return SFSQ_OK;
+}
+
+/*
+ * Unblocks mutex access to the given file with file descriptor fd.
+ * Returns SFSQ_OK if no errors occurred.
+ */
+int mutex_unlock() {
+    key_t key = ftok(SFS_QUEUE_KEY, 65);
+    int qid = msgget(key, 0666 | IPC_CREAT);
+    if(qid < 0) {
+        return SFSQ_MSGGET_ERROR;
+    }
+    struct sfs_msg message;
+    message.type = 1;
+    ssize_t ret = msgsnd(qid, &message, sizeof(message), MSG_NOERROR);
+    if(ret < 0) {
+        return SFSQ_MSGSND_ERROR;
+    }
+    return SFSQ_OK;
+}
+
+/*
+ * Initialises a message queue for simple fs management.
+ * Returns SFSQ_OK if no errors occurred.
+ */
+int queue_init() {
+    key_t key = ftok(SFS_QUEUE_KEY, 65);
+    int qid = msgget(key, 0666 | IPC_CREAT | IPC_EXCL);
+    if(qid < 0) {
+        return SFSQ_MSGCREAT_ERROR;
+    }
+    return qid;
+}
+
+
+int queue_destroy() {
+    key_t key = ftok(SFS_QUEUE_KEY, 65);
+    int qid = msgctl(key, IPC_RMID, NULL);
+    if(qid < 0) {
+        return SFSQ_MSGDESTROY_ERROR;
+    }
+}
+
 
 
 // ========= MESSAGE MUTEX END ===========
