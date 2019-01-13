@@ -350,9 +350,16 @@ void updateMemory() {
 
 //TODO: mutexy
 int simplefs_defragment() {
+    if (mutex_lock() != SFSQ_OK) {
+        return SFS_LOCK_MUTEX_ERROR;
+    }
     FILE *FS = fopen(FSAbsolutePath, "r+");
-    if (FS == NULL)
+    if (FS == NULL){
+        if (mutex_unlock() != SFSQ_OK) {
+            return SFS_UNLOCK_MUTEX_ERROR;
+        }
         return -1;
+    }
 
     int ord[MAX_FILES];
     getSortedOrder(ord);
@@ -385,6 +392,9 @@ int simplefs_defragment() {
     updateMetadata(FS);
     updateMemory();
     fclose(FS);
+    if (mutex_unlock() != SFSQ_OK) {
+        return SFS_UNLOCK_MUTEX_ERROR;
+    }
     return 0;
 }
 
