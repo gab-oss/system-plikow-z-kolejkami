@@ -112,7 +112,7 @@ int queue_init() {
 
 int queue_destroy() {
     key_t key = ftok(SFS_QUEUE_KEY, 65);
-    int qid = msgctl(key, IPC_RMID, NULL);
+    int qid = msgctl(key, IPC_RMID, nullptr);
     if (qid < 0) {
         return SFSQ_MSGDESTROY_ERROR;
     }
