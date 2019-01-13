@@ -3,7 +3,7 @@
 #include <climits>
 #include <stdio.h>
 #include "StringSplitter.h"
-#include "../src/fs.c"
+#include "../fs.c"
 
 using namespace std;
 //
@@ -14,7 +14,7 @@ int main(int argc, char** argv)
 {
     string PROMPT = ">";
     string input; // commandd read from cin
-    string pwd ="/"; // working directory
+    string pwd ="./"; // working directory
     while(true)
     {
         cout<<endl<<pwd<<PROMPT;
@@ -31,7 +31,7 @@ int main(int argc, char** argv)
             string path = pwd +cmd_parts[1];
             int fd = simplefs_creat((char*)path.c_str(), FS_CREAT);
             if( fd < 0)
-                cout<<"Couldn't creat file "<<cmd_parts[1];
+                cout<<"Couldn't creat file "<<cmd_parts[1] <<" (error: "<<fd<<")";
             else
                 simplefs_close(fd);
         }
@@ -139,14 +139,15 @@ int main(int argc, char** argv)
 
         else if(cmd == "mount")
         {
-            if(cmd_parts.size() < 4)
+            if(cmd_parts.size() < 3)
             {
-                cout<<"Usage: mount <fs file path> <size> <inodes>";
+                //cout<<"Usage: mount <fs file path> <size> <inodes>";
+                cout<<"Usage: mount <fs file path> <size>";
                 continue;
             }
             int size = stoi(cmd_parts[2]);
-            int inodes = stoi(cmd_parts[3]);
-            if(simplefs_mount((char*)cmd_parts[1].c_str(), size, inodes) < 0)
+            // int inodes = stoi(cmd_parts[3]);
+            if(simplefs_mount((char*)cmd_parts[1].c_str(), size) < 0)
                 cout<<"Mount error";
         }
         
