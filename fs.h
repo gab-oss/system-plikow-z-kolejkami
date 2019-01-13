@@ -16,7 +16,7 @@
 #define FS_RDONLY               1	// 001 - Read only
 #define FS_WRONLY               2	// 010 - Write only
 #define FS_RDWR                 3	// 011 - Read and write
-
+#define FS_CREAT				4
 // ========= MESSAGE MUTEX START ===========
 
 //#define SFS_QUEUE_KEY "simplefs_queue"
@@ -110,6 +110,9 @@ struct inodeFree
 void updateMemory();
 void readFS(char name[]);
 int check_path(char * name, char * _filename);
+
+int simplefs_write(int, char*, int);
+int simplefs_lseek(int, int, int);
 
 //get file indexes in order as written in FS
 int* getSortedOrder()
@@ -265,7 +268,7 @@ void updateMemory()
 			//there is no free memory between files
 			continue;
 		
-		struct inodeFree *temp = malloc(sizeof(struct inodeFree));
+		struct inodeFree *temp = (struct inodeFree *)malloc(sizeof(struct inodeFree));
 		temp->base = fileInfos[ord[i]][0] + fileInfos[ord[i]][1];
 		if(temp->base > capacity) 
 			//no free memory after last file
@@ -300,7 +303,7 @@ void defragment()
   	if(fileCount > 0)
   	{
 		//write first file to buffer
-    	char *buffer = malloc(fileInfos[ord[0]][1]);
+    	char *buffer = (char*)malloc(fileInfos[ord[0]][1]);
 		fseek(FS, fileInfos[ord[0]][0], SEEK_SET);
 		fread(buffer, sizeof(char), fileInfos[ord[0]][1], FS);
 		
@@ -312,7 +315,7 @@ void defragment()
 	for(int i = 1; i < fileCount; i++)
 	{
 		//move file to after previous one
-		char *buffer = malloc(fileInfos[ord[i]][1]);
+		char *buffer = (char*)malloc(fileInfos[ord[i]][1]);
 		fseek(FS, fileInfos[ord[i]][0], SEEK_SET);
 		fread(buffer, sizeof(char), fileInfos[ord[i]][1], FS);
 		
@@ -422,10 +425,11 @@ int simplefs_mkdir(char* name)
 	freeMemory -= 1;
 	
 	//add dir to dir
-	char *buf[1];
+	char buf[1];
 	buf[0] = i;
-	simplefs_lseek(FS, SEEK_SET, fileInfos[fileId][1]);
-	simplefs_write(fileId, buf, 1);
+	simplefs_lseek(fileno(FS), SEEK_SET, fileInfos[fileId][1]);
+	//fseek(FS, SEEK_SET, fileInfos[fileId][1]);
+	simplefs_write(fileId, (char*)buf, 1);
 
 	updateMetadata(FS);
 	fclose(FS);
@@ -442,8 +446,9 @@ int simplefs_creat(char* name, int mode) //name is a full path
 
 	dirdesc = -1 * (dirdesc + 2);
 
+	printf("name: %s, mode: %d, fileCount: %d, MAX_FILES: %d, freeMemory: %d\n", name, mode, fileCount, MAX_FILES, freeMemory);
 	if(strlen(name) > NAME_SIZE || fileCount >= MAX_FILES || freeMemory < 1)
-		return -1;
+		return -2;
 
 	//find free memory for file
 	struct inodeFree *temp = &head;
@@ -481,10 +486,11 @@ int simplefs_creat(char* name, int mode) //name is a full path
 	freeMemory -= 1;
 
 	//add file to dir
-	char *buf[1];
+	char buf[1];
 	buf[0] = i;
-	simplefs_lseek(FS, SEEK_SET, fileInfos[dirdesc][1]);
-	simplefs_write(dirdesc, buf, 1);
+	simplefs_lseek(fileno(FS), SEEK_SET, fileInfos[dirdesc][1]);
+	//fseek(FS, SEEK_SET, fileInfos[dirdesc][1]);
+	simplefs_write(dirdesc, (char*)buf, 1);
 
 	updateMetadata(FS);
 	fclose(FS);

@@ -3,7 +3,7 @@
 #include <climits>
 #include <stdio.h>
 #include "StringSplitter.h"
-#include "../fs.c"
+#include "../fs.h"
 
 using namespace std;
 //
@@ -31,7 +31,7 @@ int main(int argc, char** argv)
             string path = pwd +cmd_parts[1];
             int fd = simplefs_creat((char*)path.c_str(), FS_CREAT);
             if( fd < 0)
-                cout<<"Couldn't creat file "<<cmd_parts[1] <<" (error: "<<fd<<")";
+                cout<<"Couldn't creat file "<<path<<" (error: "<<fd<<")";
             else
                 simplefs_close(fd);
         }
@@ -43,8 +43,9 @@ int main(int argc, char** argv)
                 continue;
             }
             string path = pwd +cmd_parts[1];
-            if( simplefs_mkdir((char*)path.c_str()) < 0)
-                cout<<"Couldn't create directory";
+            int r = simplefs_mkdir((char*)path.c_str()); 
+            if( r < 0)
+                cout<<"Couldn't create directory"<<path<<"(error: "<<r<<")";
         }
         else if(cmd == "rm")
         {
