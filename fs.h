@@ -398,6 +398,51 @@ int simplefs_defragment() {
     return 0;
 }
 
+int simplefs_defragment() {
+    if (mutex_lock() != SFSQ_OK) {
+        return SFS_LOCK_MUTEX_ERROR;
+    }
+    FILE *FS = fopen(FSAbsolutePath, "r+");
+    if (FS == nullptr) {
+        if (mutex_unlock() != SFSQ_OK) {
+            return SFS_UNLOCK_MUTEX_ERROR;
+        }
+        return -1;
+    }
+
+    int *ord = getSortedOrder();
+
+    if (fileCount > 0) {
+        //write first file to buffer
+        char *buffer = (char *) malloc(fileInfos[ord[0]][1]);
+        fseek(FS, fileInfos[ord[0]][0], SEEK_SET);
+        fread(buffer, sizeof(char), fileInfos[ord[0]][1], FS);
+
+        //move first file to after metadata
+        fileInfos[ord[0]][0] = sizeof(int) + MAX_FILES * (INFO_SIZE + NAME_SIZE) + 1;
+        fseek(FS, fileInfos[ord[0]][0], SEEK_SET);
+        fwrite(buffer, sizeof(char), fileInfos[ord[0]][1], FS);
+    }
+    for (int i = 1; i < fileCount; i++) {
+        //move file to after previous one
+        char *buffer = (char *) malloc(fileInfos[ord[i]][1]);
+        fseek(FS, fileInfos[ord[i]][0], SEEK_SET);
+        fread(buffer, sizeof(char), fileInfos[ord[i]][1], FS);
+
+        fileInfos[ord[i]][0] = fileInfos[ord[i - 1]][0] + fileInfos[ord[i - 1]][1] + 1;
+        fseek(FS, fileInfos[ord[i]][0], SEEK_SET);
+        fwrite(buffer, sizeof(char), fileInfos[ord[i]][1], FS);
+    }
+
+    updateMetadata(FS);
+    updateMemory();
+    fclose(FS);
+    if (mutex_unlock() != SFSQ_OK) {
+        return SFS_UNLOCK_MUTEX_ERROR;
+    }
+    return 0;
+}
+
 int simplefs_open(char *name, int mode) {
     if (mutex_lock() != SFSQ_OK) {
         return SFS_LOCK_MUTEX_ERROR;
