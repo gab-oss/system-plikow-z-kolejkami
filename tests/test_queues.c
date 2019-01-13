@@ -1,26 +1,57 @@
-#include <stdlib.h>
+#include <fcntl.h>
+#include <mqueue.h>
+#include <pthread.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
+#include <sys/types.h>
 #include <unistd.h>
 #include "../fs.h"
 
 
-int main(){
-    printf("queue_init\n");
-    int qid = queue_init();
-    if(qid < 0){
-        return -1;
+void * queue_server(void * args) {
+
+    while(1) {
+        mutex_lock();
+        printf("SERVER\n");
+        usleep(0.725 * 1e6);
+        mutex_unlock();
     }
-    printf("mutex_lock\n");
-    if(mutex_lock() != SFSQ_OK) {
-        return -1;
+    return NULL;
+}
+
+
+void * queue_client(void * args) {
+
+
+    while(1) {
+        mutex_lock();
+        printf("CLIENT\n");
+        fflush(stdout);
+        usleep(7.33 * 1e6);
+        mutex_unlock();
     }
-    printf("mutex_unlock\n");
-    if(mutex_unlock() != SFSQ_OK) {
-        return -1;
-    }
-    printf("queue_destroy\n");
-    queue_destroy();
-    printf("return\n");
-    return 0;
+
+
+    return NULL;
+}
+
+
+int main(int argc, char** argv) {
+
+    pthread_t client, server;
+
+    printf("Start...\n");
+    queue_init();
+
+    pthread_create(&server, NULL, &queue_server, NULL);
+    pthread_create(&client, NULL, &queue_client, NULL);
+
+    pthread_join(server, NULL);
+    pthread_join(client, NULL);
+
+    printf("Done...\n");
+
+    return (EXIT_SUCCESS);
 }

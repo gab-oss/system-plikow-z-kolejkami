@@ -44,6 +44,13 @@ struct sfs_msg {
     long type;
 };
 
+
+int send_msg(int qid, long type){
+	struct sfs_msg message;
+	message.type = type;
+	return msgsnd(qid, &message, sizeof(message), MSG_NOERROR);
+}
+
 /*
  * Blocks the execution of the process until mutex for a file with
  * with file descriptor fd is unlocked.
@@ -73,9 +80,7 @@ int mutex_unlock() {
     if(qid < 0) {
         return SFSQ_MSGGET_ERROR;
     }
-    struct sfs_msg message;
-    message.type = 1;
-    ssize_t ret = msgsnd(qid, &message, sizeof(message), MSG_NOERROR);
+    ssize_t ret = send_msg(qid, 1);
     if(ret < 0) {
         return SFSQ_MSGSND_ERROR;
     }
@@ -92,6 +97,10 @@ int queue_init() {
     if(qid < 0) {
         return SFSQ_MSGCREAT_ERROR;
     }
+	ssize_t ret = send_msg(qid, 1);
+	if(ret < 0) {
+		return SFSQ_MSGSND_ERROR;
+	}
     return qid;
 }
 
