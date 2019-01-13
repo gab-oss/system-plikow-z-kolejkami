@@ -4,6 +4,4 @@ project (simplefs)
 include_directories(.)
 include_directories(/usr/include)
 
-add_executable(test_queue tests/test_queues.c fs.h)
-target_link_libraries(test_queue rt)
-target_link_libraries(test_queue pthread)
+add_executable(fsconsole tests/fsconsole.cpp fs.h)

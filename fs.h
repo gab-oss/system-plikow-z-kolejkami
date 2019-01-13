@@ -24,6 +24,11 @@
 #define FS_WRONLY               2    // 010 - Write only
 #define FS_RDWR                 3    // 011 - Read and write
 
+#define SFS_LOCK_MUTEX_ERROR    -2
+#define SFS_UNLOCK_MUTEX_ERROR  -3
+#define SFS_CREATE_QUEUE_ERROR  -4
+#define SFS_DESTROY_QUEUE_ERROR -5
+
 // ========= MESSAGE MUTEX START ===========
 
 #define SFS_QUEUE_KEY           "/simplefs_key"
@@ -45,10 +50,10 @@ struct sfs_msg {
 };
 
 
-int send_msg(int qid, long type){
-	struct sfs_msg message;
-	message.type = type;
-	return msgsnd(qid, &message, sizeof(message), MSG_NOERROR);
+int send_msg(int qid, long type) {
+    struct sfs_msg message;
+    message.type = type;
+    return msgsnd(qid, &message, sizeof(message), MSG_NOERROR);
 }
 
 /*
@@ -59,12 +64,12 @@ int send_msg(int qid, long type){
 int mutex_lock() {
     key_t key = ftok(SFS_QUEUE_KEY, 65);
     int qid = msgget(key, 0666 | IPC_CREAT);
-    if(qid < 0) {
+    if (qid < 0) {
         return SFSQ_MSGGET_ERROR;
     }
     struct sfs_msg message;
     ssize_t ret = msgrcv(qid, &message, sizeof(message), 1, MSG_NOERROR);
-    if(ret < 0) {
+    if (ret < 0) {
         return SFSQ_MSGRCV_ERROR;
     }
     return SFSQ_OK;
@@ -77,11 +82,11 @@ int mutex_lock() {
 int mutex_unlock() {
     key_t key = ftok(SFS_QUEUE_KEY, 65);
     int qid = msgget(key, 0666 | IPC_CREAT);
-    if(qid < 0) {
+    if (qid < 0) {
         return SFSQ_MSGGET_ERROR;
     }
     ssize_t ret = send_msg(qid, 1);
-    if(ret < 0) {
+    if (ret < 0) {
         return SFSQ_MSGSND_ERROR;
     }
     return SFSQ_OK;
@@ -94,13 +99,13 @@ int mutex_unlock() {
 int queue_init() {
     key_t key = ftok(SFS_QUEUE_KEY, 65);
     int qid = msgget(key, 0666 | IPC_CREAT | IPC_EXCL);
-    if(qid < 0) {
+    if (qid < 0) {
         return SFSQ_MSGCREAT_ERROR;
     }
-	ssize_t ret = send_msg(qid, 1);
-	if(ret < 0) {
-		return SFSQ_MSGSND_ERROR;
-	}
+    ssize_t ret = send_msg(qid, 1);
+    if (ret < 0) {
+        return SFSQ_MSGSND_ERROR;
+    }
     return qid;
 }
 
@@ -108,7 +113,7 @@ int queue_init() {
 int queue_destroy() {
     key_t key = ftok(SFS_QUEUE_KEY, 65);
     int qid = msgctl(key, IPC_RMID, NULL);
-    if(qid < 0) {
+    if (qid < 0) {
         return SFSQ_MSGDESTROY_ERROR;
     }
 }
@@ -182,10 +187,21 @@ int simplefs_mount(char *name, int size) {
         readFS(name);
         return 0;
     }
+    // Initialize queue
+    if (queue_init() != SFSQ_OK) {
+        return SFS_CREATE_QUEUE_ERROR;
+    }
+    if (mutex_lock() != SFSQ_OK) {
+        return SFS_LOCK_MUTEX_ERROR;
+    }
     strcpy(FSAbsolutePath, name);
     //check if enough space for metadata and first file
-    if (size < METADATA_SIZE + sizeof(int))
+    if (size < METADATA_SIZE + sizeof(int)) {
+        if (mutex_unlock() != SFSQ_OK) {
+            return SFS_UNLOCK_MUTEX_ERROR;
+        }
         return -1;
+    }
 
     capacity = size;
     freeMemory = capacity - (METADATA_SIZE + sizeof(char));
@@ -208,15 +224,26 @@ int simplefs_mount(char *name, int size) {
     updateMemory();
 
     fclose(file);
+    if (mutex_unlock() != SFSQ_OK) {
+        return SFS_UNLOCK_MUTEX_ERROR;
+    }
     return 0;
 }
 
-//TODO: mutexy
+
 void readFS(char name[]) {
+    if (mutex_lock() != SFSQ_OK) {
+        return SFS_LOCK_MUTEX_ERROR;
+    }
     strcpy(FSAbsolutePath, name);
     FILE *file = fopen(name, "r");
-    if (file == NULL)
+    if (file == NULL) {
+        if (mutex_unlock() != SFSQ_OK) {
+            return SFS_UNLOCK_MUTEX_ERROR;
+        }
         return;
+    }
+
 
     //read FS capacity from metadata and calculate metadata size
     fread(&capacity, sizeof(int), 1, file);
@@ -237,11 +264,23 @@ void readFS(char name[]) {
     }
     updateMemory();
     fclose(file);
+    if (mutex_unlock() != SFSQ_OK) {
+        return SFS_UNLOCK_MUTEX_ERROR;
+    }
+    return 0;
 }
 
-//TODO: mutexy
+
 int simplefs_unmount(char *name) {
-    return remove(name);
+    if (mutex_lock() != SFSQ_OK) {
+        return SFS_LOCK_MUTEX_ERROR;
+    }
+    int ret = remove(name);
+    // No need to unlock, just destroy
+    if (queue_destroy() != SFSQ_OK) {
+        return SFS_DESTROY_QUEUE_ERROR;
+    }
+    return ret;
 }
 
 //TODO: mutexy
@@ -350,7 +389,9 @@ int simplefs_defragment() {
 }
 
 int simplefs_open(char *name, int mode) {
-
+    if (mutex_lock() != SFSQ_OK) {
+        return SFS_LOCK_MUTEX_ERROR;
+    }
     char filename[NAME_SIZE];
     int fileId = check_path(name, filename);
     if (fileId < 0 || fileInfos[fileId][2] == 1) {
@@ -358,22 +399,22 @@ int simplefs_open(char *name, int mode) {
         return -1;
     }
 
-//	if(mutex_lock(fileId) != SFSQ_OK) {
-//        return SFS_UNLOCK_MUTEX_ERROR;
-//    }
     posInFile[fileId] = 0; //set postion if file to 0
+    if (mutex_unlock() != SFSQ_OK) {
+        return SFS_UNLOCK_MUTEX_ERROR;
+    }
     return fileId;
 }
 
 int simplefs_close(int fd) {
-//    if(mutex_unlock(fd) != 0) {
-//        return SFS_UNLOCK_MUTEX_ERROR;
-//    }
     return 0;
 }
 
 //TODO: mutexy
 int simplefs_unlink(char *name) {
+    if (mutex_lock() != SFSQ_OK) {
+        return SFS_LOCK_MUTEX_ERROR;
+    }
     char filename[NAME_SIZE];
     int fileId = check_path(name, filename);
     if (fileId <= 0 || (fileInfos[fileId][2] == 1 && fileInfos[fileId][1] != sizeof(int))) {
@@ -437,12 +478,18 @@ int simplefs_unlink(char *name) {
     updateMetadata(FS);
 
     fclose(FS);
+    if (mutex_unlock() != SFSQ_OK) {
+        return SFS_UNLOCK_MUTEX_ERROR;
+    }
     return 0;
 
 
 }
 
 int simplefs_mkdir(char *name) {
+    if (mutex_lock() != SFSQ_OK) {
+        return SFS_LOCK_MUTEX_ERROR;
+    }
     char filename[NAME_SIZE];
     int dirId = check_path(name, filename);
     if (dirId >= -1)
@@ -489,12 +536,17 @@ int simplefs_mkdir(char *name) {
 
     updateMetadata(FS);
     fclose(FS);
-
+    if (mutex_unlock() != SFSQ_OK) {
+        return SFS_UNLOCK_MUTEX_ERROR;
+    }
     return 0;
 }
 
 int simplefs_creat(char *name, int mode) //name is a full path
 {
+    if (mutex_lock() != SFSQ_OK) {
+        return SFS_LOCK_MUTEX_ERROR;
+    }
     char filename[NAME_SIZE];
     int dirdesc = check_path(name, filename);
     if (dirdesc > -2) //name = path, filename = resulting filename
@@ -547,11 +599,16 @@ int simplefs_creat(char *name, int mode) //name is a full path
 
     updateMetadata(FS);
     fclose(FS);
-
+    if (mutex_unlock() != SFSQ_OK) {
+        return SFS_UNLOCK_MUTEX_ERROR;
+    }
     return 0;
 }
 
 int simplefs_read(int fd, char *buf, int len) {
+    if (mutex_lock() != SFSQ_OK) {
+        return SFS_LOCK_MUTEX_ERROR;
+    }
     //check permissions, if file is not dir, can be read and is long enoungh
     if (fileInfos[fd][1] < 1 && fileInfos[fd][2] != 0 && fileInfos[fd][3] != 1)
         return -1;
@@ -566,22 +623,37 @@ int simplefs_read(int fd, char *buf, int len) {
     int bytes_read = fread(buf, sizeof(char), len, FS);
     posInFile[fd] += bytes_read;
     fclose(FS);
+    if (mutex_unlock() != SFSQ_OK) {
+        return SFS_UNLOCK_MUTEX_ERROR;
+    }
     return bytes_read;
 }
 
 int simplefs_write(int fd, char *buf, int len) {
+    if (mutex_lock() != SFSQ_OK) {
+        return SFS_LOCK_MUTEX_ERROR;
+    }
     //check if there's enough memory
     if (freeMemory < sizeof(char) * len) {
+        if (mutex_unlock() != SFSQ_OK) {
+            return SFS_UNLOCK_MUTEX_ERROR;
+        }
         return -1;
     }
 
     //fd is a valid descriptor
     if (fd >= fileCount) {
+        if (mutex_unlock() != SFSQ_OK) {
+            return SFS_UNLOCK_MUTEX_ERROR;
+        }
         return -2;
     }
 
     //write permission's set
     if (!fileInfos[fd][4]) {
+        if (mutex_unlock() != SFSQ_OK) {
+            return SFS_UNLOCK_MUTEX_ERROR;
+        }
         return -3;
     }
 
@@ -613,6 +685,9 @@ int simplefs_write(int fd, char *buf, int len) {
 
             updateMemory();
             fclose(file);
+            if (mutex_unlock() != SFSQ_OK) {
+                return SFS_UNLOCK_MUTEX_ERROR;
+            }
             return wr;
         }
         temp = temp->next;
@@ -639,6 +714,9 @@ int simplefs_write(int fd, char *buf, int len) {
 
             updateMemory();
             fclose(file);
+            if (mutex_unlock() != SFSQ_OK) {
+                return SFS_UNLOCK_MUTEX_ERROR;
+            }
             return wr;
         }
 
@@ -647,27 +725,45 @@ int simplefs_write(int fd, char *buf, int len) {
 
     fclose(file);
     //no block large enough
+    if (mutex_unlock() != SFSQ_OK) {
+        return SFS_UNLOCK_MUTEX_ERROR;
+    }
     return -1;
 
 }
 
 int simplefs_lseek(int fd, int whence, int offset) {
+    if (mutex_lock() != SFSQ_OK) {
+        return SFS_LOCK_MUTEX_ERROR;
+    }
     if (whence == SEEK_SET)
         posInFile[fd] = offset;
     else if (whence == SEEK_CUR)
         posInFile[fd] += offset;
     else if (whence == SEEK_END)
         posInFile[fd] = fileInfos[fd][1] - offset;
-    else
+    else {
+        if (mutex_unlock() != SFSQ_OK) {
+            return SFS_UNLOCK_MUTEX_ERROR;
+        }
         return -1;
+    }
 
+    if (mutex_unlock() != SFSQ_OK) {
+        return SFS_UNLOCK_MUTEX_ERROR;
+    }
     return 0;
 }
 
 int simplefs_ls(char name[]) {
-
+    if (mutex_lock() != SFSQ_OK) {
+        return SFS_LOCK_MUTEX_ERROR;
+    }
     char filename[NAME_SIZE];
     if (check_path(name, filename) < 0 && strcmp(name, fileNames[0]) != 0) { //name = path
+        if (mutex_unlock() != SFSQ_OK) {
+            return SFS_UNLOCK_MUTEX_ERROR;
+        }
         return -1;
     }
     else if(strcmp(name, fileNames[0]) == 0)
@@ -691,10 +787,16 @@ int simplefs_ls(char name[]) {
 
             free(buf);
             free(bufI);
+            if (mutex_unlock() != SFSQ_OK) {
+                return SFS_UNLOCK_MUTEX_ERROR;
+            }
             return 0;
         }
     }
     //directory not found
+    if (mutex_unlock() != SFSQ_OK) {
+        return SFS_UNLOCK_MUTEX_ERROR;
+    }
     return -1;
 }
 
