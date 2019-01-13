@@ -325,6 +325,8 @@ int simplefs_mkdir(char* name)
 	//wrong path or file exists
 		return -1;
 		
+	fileId = -1 * (fileId + 2);
+
 	if(strlen(filename) > NAME_SIZE || fileCount >= MAX_FILES || freeMemory < 1)
 		return -1;
 
@@ -356,6 +358,12 @@ int simplefs_mkdir(char* name)
 	updateMemory();
 	freeMemory -= 1;
 	
+	//add dir to dir
+	char *buf[1];
+	buf[0] = i;
+	simplefs_lseek(FS, SEEK_SET, fileInfos[fileId][1]);
+	simplefs_write(fileId, buf, 1);
+
 	updateMetadata(FS);
 	fclose(FS);
 
@@ -365,8 +373,11 @@ int simplefs_mkdir(char* name)
 int simplefs_creat(char* name, int mode) //name is a full path
 {
 	char filename[NAME_SIZE];
-	if (check_path(name, filename) != -2) //name = path, filename = resulting filename
+	int dirdesc = check_path(name, filename);
+	if (dirdesc < -1) //name = path, filename = resulting filename
 		return -1;
+
+	dirdesc = -1 * (dirdesc + 2);
 
 	if(strlen(name) > NAME_SIZE || fileCount >= MAX_FILES || freeMemory < 1)
 		return -1;
@@ -397,14 +408,20 @@ int simplefs_creat(char* name, int mode) //name is a full path
 	//file metadata
 	strcpy(fileNames[i], name);
 	fileInfos[i][0] = temp->base;	//position
-	fileInfos[i][1] = 1;					//file length
-	fileInfos[i][2] = 0;					//not a directory
+	fileInfos[i][1] = 1;			//file length
+	fileInfos[i][2] = 0;			//not a directory
 	fileInfos[i][3] = readPerm;		//read permission
 	fileInfos[i][4] = writePerm;	//write permission
 
 	fileCount++;
 	updateMemory();
 	freeMemory -= 1;
+
+	//add file to dir
+	char *buf[1];
+	buf[0] = i;
+	simplefs_lseek(FS, SEEK_SET, fileInfos[dirdesc][1]);
+	simplefs_write(dirdesc, buf, 1);
 
 	updateMetadata(FS);
 	fclose(FS);
@@ -447,9 +464,7 @@ int simplefs_write(int fd, char* buf, int len)
 	}
 
 	//file is not a directory
-	if(fileInfos[fd][2]) {
-		return -1;
-	}
+	//if(fileInfos[fd][2]) {return -1;}
 
 	//first position after file
 	int eofpos = fileInfos[fd][0] + fileInfos[fd][1];
@@ -630,7 +645,7 @@ int check_path(char * name, char * _filename)
 	if(fileId > 0)
 		return fileId;
 	else
-		return -2;
+		return -1 * dirdesc - 2;
 	return -1;
 }
 
