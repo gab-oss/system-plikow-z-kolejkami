@@ -29,7 +29,7 @@ int main(int argc, char** argv)
                 continue;
             }
             string path = pwd +cmd_parts[1];
-            int fd = simplefs_creat((char*)path.c_str(), FS_CREAT);
+            int fd = simplefs_creat((char*)path.c_str(), FS_RDWR);
             if( fd < 0)
                 cout<<"Couldn't creat file "<<path<<" (error: "<<fd<<")";
             else

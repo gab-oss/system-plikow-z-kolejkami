@@ -10,13 +10,16 @@
 // Global constants
 #define MAX_FILES     16
 #define NAME_SIZE    100
-#define INFO_SIZE            5
+#define INFO_SIZE      5
+
+//size of FS + descriptors table
+#define METADATA_SIZE (sizeof(int) + MAX_FILES * (sizeof(int) * INFO_SIZE + NAME_SIZE))
 
 // Argument flags
 #define FS_RDONLY               1    // 001 - Read only
 #define FS_WRONLY               2    // 010 - Write only
 #define FS_RDWR                 3    // 011 - Read and write
-#define FS_CREAT                4
+
 // ========= MESSAGE MUTEX START ===========
 
 //#define SFS_QUEUE_KEY "simplefs_queue"
@@ -90,14 +93,14 @@ int fileCount = 0;
 char FSAbsolutePath[200];
 
 char fileNames[MAX_FILES][NAME_SIZE];
-char fileInfos[MAX_FILES][INFO_SIZE];
+int fileInfos[MAX_FILES][INFO_SIZE];
 //0 - position in FS
 //1 - filesize
 //2 - is directory
 //3 - read allowed
 //4 - write allowed
 
-char posInFile[MAX_FILES];
+int posInFile[MAX_FILES];
 
 //list of free memory blocks
 struct inodeFree {
@@ -135,24 +138,24 @@ int *getSortedOrder() {
 void updateMetadata(FILE *FS) {
     fseek(FS, sizeof(int), SEEK_SET);
     for (int i = 0; i < MAX_FILES; i++) {
+        //write rows of file descriptor table
         fwrite(&fileNames[i][0], sizeof(char), NAME_SIZE, FS);
-        fwrite(&fileInfos[i][0], sizeof(char), INFO_SIZE, FS);
+        fwrite(&fileInfos[i][0], sizeof(int), INFO_SIZE, FS);
     }
 }
 
-//TODO: mutexy
 int simplefs_mount(char *name, int size) {
-    if (access(name, F_OK) != -1)
+    if (access(name, F_OK) != -1) {
         readFS(name);
-    return 0;
-
+        return 0;
+    }
     strcpy(FSAbsolutePath, name);
     //check if enough space for metadata and first file
-    if (size < sizeof(int) + MAX_FILES * (INFO_SIZE + NAME_SIZE) + 1)
+    if (size < METADATA_SIZE + sizeof(int))
         return 1;
 
     capacity = size;
-    freeMemory = capacity - (sizeof(int) + MAX_FILES * (INFO_SIZE + NAME_SIZE) + 1);
+    freeMemory = capacity - (METADATA_SIZE + sizeof(int));
 
     //first dir
     strcpy(fileNames[0], ".");
@@ -177,11 +180,11 @@ void readFS(char name[]) {
     strcpy(FSAbsolutePath, name);
     FILE *file = fopen(name, "r");
     if (file == NULL)
-        exit(1);
+        return;
 
     //read FS capacity from metadata and calculate metadata size
     fread(&capacity, sizeof(int), 1, file);
-    freeMemory = capacity - (sizeof(int) + MAX_FILES * (INFO_SIZE + NAME_SIZE));
+    freeMemory = capacity - METADATA_SIZE;
 
     //read inode table
     fileCount = 0;
@@ -189,7 +192,7 @@ void readFS(char name[]) {
         //read filename
         fread(&fileNames[i][0], sizeof(char), NAME_SIZE, file);
         //read position and size
-        fread(&fileInfos[i][0], sizeof(char), INFO_SIZE, file);
+        fread(&fileInfos[i][0], sizeof(int), INFO_SIZE, file);
 
         freeMemory -= fileInfos[i][1];
         //check file existence
@@ -205,19 +208,19 @@ int simplefs_unmount(char *name) {
     return remove(name);
 }
 
-//TODO: mutexy, sortowanie
+//TODO: mutexy
 void updateMemory() {
     int i = 0;
     int *ord = getSortedOrder();
 
     if (fileCount < 1) {
         //there are no files
-        head.base = sizeof(int) + MAX_FILES * (INFO_SIZE + NAME_SIZE) + 1;
+        head.base = METADATA_SIZE;
         head.size = capacity - head.base + 1;
         head.next = NULL;
         return;
     } else {
-        if (fileInfos[ord[0]][0] == sizeof(int) + MAX_FILES * (INFO_SIZE + NAME_SIZE) + 1) {
+        if (fileInfos[ord[0]][0] == METADATA_SIZE) {
             //first file is just after metadata
             while (i < fileCount - 1 && fileInfos[ord[i]][0] + fileInfos[ord[i]][1] == fileInfos[ord[i + 1]][0]) {
                 //find file followed by free memory
@@ -237,7 +240,7 @@ void updateMemory() {
             }
         } else {
             //there is free memory between metadata and first file
-            head.base = sizeof(int) + MAX_FILES * (INFO_SIZE + NAME_SIZE) + 1;
+            head.base = METADATA_SIZE;
             head.size = fileInfos[ord[0]][0] - head.base;
         }
     }
@@ -284,7 +287,7 @@ int simplefs_defragment() {
         fread(buffer, sizeof(char), fileInfos[ord[0]][1], FS);
 
         //move first file to after metadata
-        fileInfos[ord[0]][0] = sizeof(int) + MAX_FILES * (INFO_SIZE + NAME_SIZE) + 1;
+        fileInfos[ord[0]][0] = METADATA_SIZE;
         fseek(FS, fileInfos[ord[0]][0], SEEK_SET);
         fwrite(buffer, sizeof(char), fileInfos[ord[0]][1], FS);
     }
@@ -341,7 +344,7 @@ int simplefs_unlink(char *name) {
     fileCount--;
     freeMemory += fileInfos[fileId][1];
     memset(fileNames[fileId], 0, NAME_SIZE);
-    memset(fileInfos[fileId], 0, INFO_SIZE);
+    memset(fileInfos[fileId], 0, INFO_SIZE * sizeof(int));
 
     updateMemory();
 
@@ -398,11 +401,10 @@ int simplefs_mkdir(char *name) {
     freeMemory -= 1;
 
     //add dir to dir
-    char buf[1];
+    int buf[1];
     buf[0] = i;
-    simplefs_lseek(fileno(FS), SEEK_SET, fileInfos[fileId][1]);
-    //fseek(FS, SEEK_SET, fileInfos[fileId][1]);
-    simplefs_write(fileId, (char *) buf, 1);
+    simplefs_lseek(fileId, SEEK_SET, fileInfos[fileId][1]);
+    simplefs_write(fileId, (char *) buf, sizeof(int));
 
     updateMetadata(FS);
     fclose(FS);
@@ -414,7 +416,7 @@ int simplefs_creat(char *name, int mode) //name is a full path
 {
     char filename[NAME_SIZE];
     int dirdesc = check_path(name, filename);
-    if (dirdesc < -1) //name = path, filename = resulting filename
+    if (dirdesc > -2) //name = path, filename = resulting filename
         return -1;
 
     dirdesc = -1 * (dirdesc + 2);
@@ -447,7 +449,7 @@ int simplefs_creat(char *name, int mode) //name is a full path
     }
 
     //file metadata
-    strcpy(fileNames[i], name);
+    strcpy(fileNames[i], filename);
     fileInfos[i][0] = temp->base;    //position
     fileInfos[i][1] = 1;            //file length
     fileInfos[i][2] = 0;            //not a directory
@@ -459,11 +461,10 @@ int simplefs_creat(char *name, int mode) //name is a full path
     freeMemory -= 1;
 
     //add file to dir
-    char buf[1];
+    int buf[1];
     buf[0] = i;
-    simplefs_lseek(fileno(FS), SEEK_SET, fileInfos[dirdesc][1]);
-    //fseek(FS, SEEK_SET, fileInfos[dirdesc][1]);
-    simplefs_write(dirdesc, (char *) buf, 1);
+    simplefs_lseek(dirdesc, SEEK_SET, fileInfos[dirdesc][1]);
+    simplefs_write(dirdesc, (char *) buf, sizeof(int));
 
     updateMetadata(FS);
     fclose(FS);
@@ -495,12 +496,12 @@ int simplefs_write(int fd, char *buf, int len) {
 
     //fd is a valid descriptor
     if (fd >= fileCount) {
-        return -1;
+        return -2;
     }
 
     //write permission's set
     if (!fileInfos[fd][4]) {
-        return -1;
+        return -3;
     }
 
     //file is not a directory
@@ -592,8 +593,10 @@ int simplefs_ls(char name[]) {
             simplefs_read(i, buf, fileInfos[i][1]);
 
             //first byte is just flag, not id
+            int *bufI;
+            memcpy(bufI, buf+1, fileInfos[i][1]-1);
             for (int j = 1; j < fileInfos[i][1]; ++j) {
-                printf("%s \n", fileNames[buf[j]]);
+                printf("%s \n", fileNames[bufI[j]]);
             }
 
             return 0;
@@ -603,7 +606,7 @@ int simplefs_ls(char name[]) {
     return -1;
 }
 
-int check_prev_dir(int prevdesc, char *dir) {
+int check_prev_dir(int prevdesc, char dir[]) {
     //check if previous directory contains dir and return dirdesc
     if (prevdesc < 0) { //prev is home
         if (strcmp(dir, fileNames[0]))
@@ -611,13 +614,19 @@ int check_prev_dir(int prevdesc, char *dir) {
         return -1;
     }
 
-    char *buf;
+    //dir empty
+    if(fileInfos[prevdesc][1] < 2)
+        return -1;
+
+    char buf[fileInfos[prevdesc][1]];
     simplefs_lseek(prevdesc, SEEK_SET, 0);
     simplefs_read(prevdesc, buf, fileInfos[prevdesc][1]); //read prev to buf
     //first byte is just flag, not id
-    for (int j = 1; j < fileInfos[prevdesc][1]; ++j) {
-        if (strcmp(fileNames[buf[j]], dir) == 0) { //dir found in prev
-            return buf[j];
+    int bufI[(fileInfos[prevdesc][1] - 1)/sizeof(int)];
+    memcpy(bufI, buf+1, fileInfos[prevdesc][1]-1);
+    for (int j = 0; j < fileInfos[prevdesc][1]; ++j) {
+        if (strcmp(fileNames[bufI[j]], dir) == 0) { //dir found in prev
+            return bufI[j];
         }
     }
 
@@ -673,7 +682,6 @@ int check_path(char *name, char *_filename) {
         return fileId;
     else
         return -1 * dirdesc - 2;
-    return -1;
 }
 
 #endif //FS_H
