@@ -382,7 +382,7 @@ int simplefs_mkdir(char *name) {
         return 1;
 
     int i;
-    for (int i = 0; i < MAX_FILES; i++) {
+    for (i = 0; i < MAX_FILES; i++) {
         //find empty descriptor
         if (fileInfos[i][1] == 0)
             break;
@@ -442,7 +442,7 @@ int simplefs_creat(char *name, int mode) //name is a full path
         writePerm = 1;
 
     int i;
-    for (int i = 0; i < MAX_FILES; i++) {
+    for (i = 0; i < MAX_FILES; i++) {
         //find empty descriptor
         if (fileInfos[i][1] == 0)
             break;

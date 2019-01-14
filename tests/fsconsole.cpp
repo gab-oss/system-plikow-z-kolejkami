@@ -15,6 +15,7 @@ int main(int argc, char** argv)
     string PROMPT = ">";
     string input; // commandd read from cin
     string pwd ="./"; // working directory
+    simplefs_mount("/tmp/azx1.fs", 10000);
     while(true)
     {
         cout<<endl<<pwd<<PROMPT;
@@ -124,8 +125,16 @@ int main(int argc, char** argv)
 
         else if(cmd == "ls")
         {
-            //TO DO
-        }
+            string path = pwd;
+            if(cmd_parts.size() == 2)
+                path+=cmd_parts[1];
+            if( path[path.size()-1] == '/')
+                path.pop_back();
+            cout<<"PATH: "<<path;
+            int ls = simplefs_ls((char*)path.c_str());
+             if(ls < 0 )
+                cout<<"LS Error: "<<ls;
+        }   
         
         else if(cmd == "unmount")
         { // unmount <fs file path>
