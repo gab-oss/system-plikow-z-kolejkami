@@ -394,7 +394,7 @@ int simplefs_mkdir(char *name) {
     }
 
     //file metadata
-    strcpy(fileNames[i], name);
+    strcpy(fileNames[i], filename);
     fileInfos[i][0] = temp->base;    //position
     fileInfos[i][1] = sizeof(int);          //file length
     fileInfos[i][2] = 1;                    //directory
