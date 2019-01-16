@@ -132,6 +132,9 @@ int *getSortedOrder() {
         }
         min = fileInfos[order[i]][0];
     }
+    // printf("ORDER: \n");
+    // for (int k=0; k < MAX_FILES; ++k)
+    //     printf("order[%d] = %d\n", k, order[k]);
     return order;
 }
 
@@ -145,15 +148,17 @@ void updateMetadata(FILE *FS) {
 }
 
 int simplefs_mount(char *name, int size) {
-    if (access(name, F_OK) != -1) {
+    if (access(name, F_OK) > 0) {
+        //file already exists read FS
         readFS(name);
         return 0;
     }
     strcpy(FSAbsolutePath, name);
     //check if enough space for metadata and first file
     if (size < METADATA_SIZE + sizeof(int))
+    {
         return 1;
-
+    }
     capacity = size;
     freeMemory = capacity - (METADATA_SIZE + sizeof(int));
 
@@ -170,6 +175,7 @@ int simplefs_mount(char *name, int size) {
     //write size of FS to metadata
     fwrite(&size, sizeof(int), 1, file);
     updateMetadata(file);
+    updateMemory();
 
     fclose(file);
     return 0;
@@ -209,39 +215,55 @@ int simplefs_unmount(char *name) {
 }
 
 //TODO: mutexy
-void updateMemory() {
+void updateMemory()
+{
     int i = 0;
     int *ord = getSortedOrder();
-
-    if (fileCount < 1) {
+    if (fileCount < 1)
+    {
         //there are no files
         head.base = METADATA_SIZE;
         head.size = capacity - head.base + 1;
         head.next = NULL;
         return;
-    } else {
-        if (fileInfos[ord[0]][0] == METADATA_SIZE) {
+    }
+    else
+    {
+        // printf("MEMO ORDER: \n");
+        // for(int k=0; k < MAX_FILES; ++k)
+        //     printf("order[%d] = %d\n", k, ord[k]);
+
+        if (fileInfos[ord[0]][0] == METADATA_SIZE)
+        {
             //first file is just after metadata
-            while (i < fileCount - 1 && fileInfos[ord[i]][0] + fileInfos[ord[i]][1] == fileInfos[ord[i + 1]][0]) {
+            while (i < (fileCount - 1) && 
+            (fileInfos[ord[i]][0] + fileInfos[ord[i]][1]) == fileInfos[ord[i + 1]][0] )
+            {
                 //find file followed by free memory
                 i++;
             }
             //position of first free memory segment
             head.base = fileInfos[ord[i]][0] + fileInfos[ord[i]][1];
-            if (i == fileCount - 1) {
+            if (i == fileCount - 1)
+            {
                 //all free memory follows last file
                 head.size = capacity - head.base + 1;
                 head.next = NULL;
                 return;
-            } else {
+            }
+            else
+            {
                 //there is free memory between files
                 head.size = fileInfos[ord[i + 1]][0] - head.base;
                 head.next = NULL;
             }
-        } else {
+        }
+        else
+        {
             //there is free memory between metadata and first file
             head.base = METADATA_SIZE;
-            head.size = fileInfos[ord[0]][0] - head.base;
+            //head.size = fileInfos[ord[0]][0] - head.base;
+            head.size -= fileInfos[ord[0]][0];
         }
     }
 
@@ -421,8 +443,8 @@ int simplefs_creat(char *name, int mode) //name is a full path
 
     dirdesc = -1 * (dirdesc + 2);
 
-    printf("name: %s, mode: %d, fileCount: %d, MAX_FILES: %d, freeMemory: %d\n", name, mode, fileCount, MAX_FILES,
-           freeMemory);
+    printf("CREAT: name: %s, mode: %d, fileCount: %d, MAX_FILES: %d, freeMemory: %d dd = %d\n", name, mode, fileCount, MAX_FILES,
+           freeMemory, dirdesc);
     if (strlen(name) > NAME_SIZE || fileCount >= MAX_FILES || freeMemory < 1)
         return -2;
 
@@ -535,20 +557,20 @@ int simplefs_write(int fd, char *buf, int len) {
         }
         temp = temp->next;
     }
-
     //look for enough free space
     temp = &head;
-    while (temp != NULL) {
-        if (temp->size >= fileInfos[fd][1] + sizeinc) {
+    while (temp != NULL) 
+    {
+        if (temp->size >= (fileInfos[fd][1] + sizeinc)) 
+        {
             //move file
-            char *tempbuf;
+            char tempbuf[capacity];
             fseek(file, fileInfos[fd][0], SEEK_SET);
             fread(tempbuf, fileInfos[fd][1], 1, file);
             fseek(file, temp->base, SEEK_SET);
             fwrite(tempbuf, fileInfos[fd][1], 1, file);
             //write
             fwrite(buf, sizeof(char), len, file);
-
             fileInfos[fd][0] = temp->base;
             fileInfos[fd][1] += len * sizeof(char);
             posInFile[fd] += sizeof(char) * len;
@@ -613,24 +635,28 @@ int check_prev_dir(int prevdesc, char dir[]) {
             return 0;
         return -1;
     }
-
+    for(int i = 0; i <MAX_FILES;++i )
     //dir empty
-    if(fileInfos[prevdesc][1] < 2)
+    if(fileInfos[prevdesc][1] < 2){
         return -1;
-
+    }
+    
     char buf[fileInfos[prevdesc][1]];
     simplefs_lseek(prevdesc, SEEK_SET, 0);
     simplefs_read(prevdesc, buf, fileInfos[prevdesc][1]); //read prev to buf
     //first byte is just flag, not id
-    int bufI[(fileInfos[prevdesc][1] - 1)/sizeof(int)];
+    int ibuf_size = (fileInfos[prevdesc][1] - 1)/sizeof(int); 
+    int bufI[ibuf_size];
     memcpy(bufI, buf+1, fileInfos[prevdesc][1]-1);
-    for (int j = 0; j < fileInfos[prevdesc][1]; ++j) {
-        if (strcmp(fileNames[bufI[j]], dir) == 0) { //dir found in prev
-            return bufI[j];
-        }
-    }
-
-    return -1;
+     for (int k = 0; k< ibuf_size; ++k)
+     for (int j = 0; j < fileInfos[prevdesc][1]; ++j)
+     {
+         if (strcmp(fileNames[bufI[j]], dir) == 0)
+         { //dir found in prev
+             return bufI[j];
+         }
+     }
+     return -1;
 }
 
 int check_path(char *name, char *_filename) {
