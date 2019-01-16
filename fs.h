@@ -120,19 +120,19 @@ int simplefs_write(int, char *, int);
 int simplefs_lseek(int, int, int);
 
 //get file indexes in order as written in FS
-int *getSortedOrder() {
-    static int order[MAX_FILES];
-    int min = fileInfos[0][0];
+void getSortedOrder(int order[]) {
     for (int i = 0; i < MAX_FILES; i++) {
-        order[i] = 0;
-        for (int j = 0; j < MAX_FILES; j++) {
-            if (fileInfos[j][1] != 0 && fileInfos[j][0] > min && fileInfos[j][0] < fileInfos[order[i]][0]) {
-                order[i] = j;
+        //order[i] = 0;
+        int min = i;
+        for (int j = i+1; j < MAX_FILES; j++) {
+            if (fileInfos[j][1] != 0 && fileInfos[j][0] < fileInfos[min][0]) {
+                //order[i] = j;
+                min = j;
             }
         }
-        min = fileInfos[order[i]][0];
+        order[i] = min;
+        //min = fileInfos[order[i]][0];
     }
-    return order;
 }
 
 void updateMetadata(FILE *FS) {
@@ -155,12 +155,14 @@ int simplefs_mount(char *name, int size) {
         return 1;
 
     capacity = size;
-    freeMemory = capacity - (METADATA_SIZE + sizeof(int));
+    freeMemory = capacity - (METADATA_SIZE + sizeof(char));
 
     //first dir
+    fileCount++;
+
     strcpy(fileNames[0], ".");
-    fileInfos[0][0] = 0;
-    fileInfos[0][1] = 1;
+    fileInfos[0][0] = METADATA_SIZE;
+    fileInfos[0][1] = sizeof(int);
     fileInfos[0][2] = 1;
     fileInfos[0][3] = 1;
     fileInfos[0][4] = 1;
@@ -170,6 +172,7 @@ int simplefs_mount(char *name, int size) {
     //write size of FS to metadata
     fwrite(&size, sizeof(int), 1, file);
     updateMetadata(file);
+    updateMemory();
 
     fclose(file);
     return 0;
@@ -211,7 +214,8 @@ int simplefs_unmount(char *name) {
 //TODO: mutexy
 void updateMemory() {
     int i = 0;
-    int *ord = getSortedOrder();
+    int ord[MAX_FILES];
+    getSortedOrder(ord);
 
     if (fileCount < 1) {
         //there are no files
@@ -278,7 +282,8 @@ int simplefs_defragment() {
     if (FS == NULL)
         return -1;
 
-    int *ord = getSortedOrder();
+    int ord[MAX_FILES];
+    getSortedOrder(ord);
 
     if (fileCount > 0) {
         //write first file to buffer
@@ -391,14 +396,14 @@ int simplefs_mkdir(char *name) {
     //file metadata
     strcpy(fileNames[i], name);
     fileInfos[i][0] = temp->base;    //position
-    fileInfos[i][1] = 1;                    //file length
+    fileInfos[i][1] = sizeof(int);          //file length
     fileInfos[i][2] = 1;                    //directory
     fileInfos[i][3] = 1;                    //read permission
     fileInfos[i][4] = 1;                    //write permission
 
     fileCount++;
     updateMemory();
-    freeMemory -= 1;
+    freeMemory -= sizeof(int);
 
     //add dir to dir
     int buf[1];
@@ -451,14 +456,14 @@ int simplefs_creat(char *name, int mode) //name is a full path
     //file metadata
     strcpy(fileNames[i], filename);
     fileInfos[i][0] = temp->base;    //position
-    fileInfos[i][1] = 1;            //file length
+    fileInfos[i][1] = sizeof(int);   //file length
     fileInfos[i][2] = 0;            //not a directory
     fileInfos[i][3] = readPerm;        //read permission
     fileInfos[i][4] = writePerm;    //write permission
 
     fileCount++;
     updateMemory();
-    freeMemory -= 1;
+    freeMemory -= sizeof(int);
 
     //add file to dir
     int buf[1];
@@ -513,7 +518,7 @@ int simplefs_write(int fd, char *buf, int len) {
     FILE *file = fopen(FSAbsolutePath, "r+");
 
     //size from current position to eof
-    int restfile = fileInfos[fd][1] - fileInfos[fd][0] - posInFile[fd];
+    int restfile = fileInfos[fd][1] - posInFile[fd];
     //how much will the size increase
     int sizeinc = 0;
     if (restfile < sizeof(char) * len) {
@@ -531,6 +536,7 @@ int simplefs_write(int fd, char *buf, int len) {
             fileInfos[fd][1] += sizeinc;
 
             updateMemory();
+            fclose(file);
             return 0;
         }
         temp = temp->next;
@@ -541,11 +547,11 @@ int simplefs_write(int fd, char *buf, int len) {
     while (temp != NULL) {
         if (temp->size >= fileInfos[fd][1] + sizeinc) {
             //move file
-            char *tempbuf;
+            char *tempbuf = (char*)malloc(fileInfos[fd][1]);
             fseek(file, fileInfos[fd][0], SEEK_SET);
-            fread(tempbuf, fileInfos[fd][1], 1, file);
+            fread(tempbuf, sizeof(char), fileInfos[fd][1], file);
             fseek(file, temp->base, SEEK_SET);
-            fwrite(tempbuf, fileInfos[fd][1], 1, file);
+            fwrite(tempbuf, sizeof(char),fileInfos[fd][1], file);
             //write
             fwrite(buf, sizeof(char), len, file);
 
@@ -554,12 +560,14 @@ int simplefs_write(int fd, char *buf, int len) {
             posInFile[fd] += sizeof(char) * len;
 
             updateMemory();
+            fclose(file);
             return 0;
         }
 
         temp = temp->next;
     }
 
+    fclose(file);
     //no block large enough
     return -1;
 
@@ -567,11 +575,11 @@ int simplefs_write(int fd, char *buf, int len) {
 
 int simplefs_lseek(int fd, int whence, int offset) {
     if (whence == SEEK_SET)
-        posInFile[fd] += fileInfos[fd][0] + offset;
+        posInFile[fd] = offset;
     else if (whence == SEEK_CUR)
         posInFile[fd] += offset;
     else if (whence == SEEK_END)
-        posInFile[fd] += fileInfos[fd][0] + fileInfos[fd][1] - offset;
+        posInFile[fd] = fileInfos[fd][1] - offset;
     else
         return -1;
 
@@ -581,21 +589,25 @@ int simplefs_lseek(int fd, int whence, int offset) {
 int simplefs_ls(char name[]) {
 
     char filename[NAME_SIZE];
-    if (check_path(name, filename) < 0) { //name = path
+    if (check_path(name, filename) < 0 && strcmp(name, fileNames[0]) != 0) { //name = path
         return -1;
     }
+    else if(strcmp(name, fileNames[0]) == 0)
+    {//dir is root
+        strcpy(filename, fileNames[0]);
+    }
 
-    strcpy(filename, name); //name = filename
+    //strcpy(filename, name); //name = filename
     for (int i = 0; i < fileCount; ++i) {
         if (strcmp(name, fileNames[i]) == 0) {
-            char *buf;
-            simplefs_lseek(i, SEEK_SET, 0);
-            simplefs_read(i, buf, fileInfos[i][1]);
+            char *buf = (char*)malloc(fileInfos[i][1]-sizeof(int));
+            simplefs_lseek(i, SEEK_SET, sizeof(int));
+            simplefs_read(i, buf, fileInfos[i][1]-sizeof(int));
 
             //first byte is just flag, not id
-            int *bufI;
-            memcpy(bufI, buf+1, fileInfos[i][1]-1);
-            for (int j = 1; j < fileInfos[i][1]; ++j) {
+            int *bufI = (int*)malloc(fileInfos[i][1]-sizeof(int));
+            memcpy(bufI, buf, fileInfos[i][1]-sizeof(int));
+            for (int j = 0; j < fileInfos[i][1]/sizeof(int)-1; ++j) {
                 printf("%s \n", fileNames[bufI[j]]);
             }
 
@@ -615,16 +627,16 @@ int check_prev_dir(int prevdesc, char dir[]) {
     }
 
     //dir empty
-    if(fileInfos[prevdesc][1] < 2)
+    if(fileInfos[prevdesc][1] <= sizeof(int))
         return -1;
 
-    char buf[fileInfos[prevdesc][1]];
-    simplefs_lseek(prevdesc, SEEK_SET, 0);
-    simplefs_read(prevdesc, buf, fileInfos[prevdesc][1]); //read prev to buf
+    char *buf = (char*)malloc(fileInfos[prevdesc][1] - sizeof(int));
+    simplefs_lseek(prevdesc, SEEK_SET, sizeof(int));
+    simplefs_read(prevdesc, buf, fileInfos[prevdesc][1] - sizeof(int)); //read prev to buf
     //first byte is just flag, not id
-    int bufI[(fileInfos[prevdesc][1] - 1)/sizeof(int)];
-    memcpy(bufI, buf+1, fileInfos[prevdesc][1]-1);
-    for (int j = 0; j < fileInfos[prevdesc][1]; ++j) {
+    int *bufI = (int*)malloc(fileInfos[prevdesc][1] - sizeof(int));
+    memcpy(bufI, buf, fileInfos[prevdesc][1]-sizeof(int));
+    for (int j = 0; j < fileInfos[prevdesc][1]/sizeof(int) - 1; ++j) {
         if (strcmp(fileNames[bufI[j]], dir) == 0) { //dir found in prev
             return bufI[j];
         }
