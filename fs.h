@@ -125,13 +125,12 @@ void getSortedOrder(int order[]) {
         //order[i] = 0;
         int min = i;
         for (int j = i+1; j < MAX_FILES; j++) {
-            if (fileInfos[j][1] != 0 && fileInfos[j][0] < fileInfos[min][0]) {
-                //order[i] = j;
+            if (fileInfos[j][1] != 0 && fileInfos[j][0] < fileInfos[min][0])
+            {
                 min = j;
             }
         }
         order[i] = min;
-        //min = fileInfos[order[i]][0];
     }
 }
 
@@ -340,7 +339,7 @@ int simplefs_close(int fd) {
 int simplefs_unlink(char *name) {
     char filename[NAME_SIZE];
     int fileId = check_path(name, filename);
-    if (fileId == 0 || fileId == -1 || (fileInfos[fileId][2] == 1 && fileInfos[fileId][1] == 1)) {
+    if (fileId == 0 || fileId == -1 || (fileInfos[fileId][2] == 1 && fileInfos[fileId][1] == sizeof(int))) {
         //no file or file is non-empty dir
         return -1;
     }
@@ -351,12 +350,50 @@ int simplefs_unlink(char *name) {
     memset(fileNames[fileId], 0, NAME_SIZE);
     memset(fileInfos[fileId], 0, INFO_SIZE * sizeof(int));
 
-    updateMemory();
+    //find dir with file
+    char *dirname;
+    char *temp = strtok(name, "/");
+    while(temp != nullptr) {
+        dirname = temp;
+        temp = strtok(nullptr, "/");
+        if(strcmp(temp,filename) == 0)
+            break;
+    }
+    //find dir index
+    int dirIdx = 0;
+    for(;dirIdx < MAX_FILES; ++dirIdx)
+    {
+        if(strcmp(dirname, fileNames[dirIdx]) == 0)
+            break;
+    }
+    //rewrite dir
 
-    //save changes to FS
     FILE *FS = fopen(FSAbsolutePath, "r+");
     if (FS == NULL)
         return 1;
+
+    //read parent dir
+    int dirSize = fileInfos[dirIdx][1] - sizeof(int);
+    int *buf = (int*)malloc(dirSize);
+    fseek(FS, fileInfos[dirIdx][0] + sizeof(int),SEEK_SET);
+    fread(buf, dirSize, 1, FS);
+
+    //find position of file to be removed
+    int i = 0;
+    while(buf[i] != fileId)
+        ++i;
+
+    //move rest of file to delete
+    memmove(buf+i, buf+i+1,dirSize - i - 1);
+
+    //save change to dir
+    fseek(FS, fileInfos[dirIdx][0] + sizeof(int),SEEK_SET);
+    fwrite(buf, dirSize - sizeof(int), 1,FS);
+    fileInfos[dirIdx][1] -= sizeof(int);
+
+    updateMemory();
+
+    //save changes to FS
 
     updateMetadata(FS);
 
@@ -488,7 +525,6 @@ int simplefs_read(int fd, char *buf, int len) {
     fseek(FS, fileInfos[fd][0] + posInFile[fd], SEEK_SET);
     int bytes_read = fread(buf, sizeof(char), len, FS);
     posInFile[fd] += bytes_read;
-    buf[bytes_read] = '\0';
     fclose(FS);
     return bytes_read;
 }
@@ -599,7 +635,7 @@ int simplefs_ls(char name[]) {
 
     //strcpy(filename, name); //name = filename
     for (int i = 0; i < fileCount; ++i) {
-        if (strcmp(name, fileNames[i]) == 0) {
+        if (strcmp(filename, fileNames[i]) == 0) {
             char *buf = (char*)malloc(fileInfos[i][1]-sizeof(int));
             simplefs_lseek(i, SEEK_SET, sizeof(int));
             simplefs_read(i, buf, fileInfos[i][1]-sizeof(int));
