@@ -121,16 +121,20 @@ int simplefs_lseek(int, int, int);
 
 //get file indexes in order as written in FS
 void getSortedOrder(int order[]) {
-    for (int i = 0; i < MAX_FILES; i++) {
-        //order[i] = 0;
+    for(int i = 0; i< MAX_FILES; ++i)
+        order[i] = i;
+
+    for (int i = 0; i < MAX_FILES-1; i++) {
         int min = i;
         for (int j = i+1; j < MAX_FILES; j++) {
-            if (fileInfos[j][1] != 0 && fileInfos[j][0] < fileInfos[min][0])
+            if (fileInfos[order[j]][1] != 0 && fileInfos[order[j]][0] < fileInfos[order[min]][0])
             {
-                min = j;
+                min = order[j];
             }
         }
-        order[i] = min;
+        int temp = order[i];
+        order[i] = order[min];
+        order[min] = temp;
     }
 }
 

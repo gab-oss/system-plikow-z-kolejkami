@@ -75,6 +75,7 @@ int main(int argc, char** argv)
             string line = cmd_parts[2];
             for(int i=3; i<cmd_parts.size();++i)
                 line+=" "+cmd_parts[i];
+            simplefs_lseek(fd, SEEK_SET, 0);
             if(simplefs_write(fd, (char*)line.c_str(), line.size()) < 0)    
                 cout<<"Write error";
             simplefs_close(fd);
@@ -113,12 +114,14 @@ int main(int argc, char** argv)
 
             if(offset != INT_MIN && whence != INT_MIN)
                 simplefs_lseek(fd, whence, offset);
-            int read_size = 100;
-            char buf[read_size];
+            char buf[100];
             int rval;
             simplefs_lseek(fd, SEEK_SET, 0);
-            while((rval = simplefs_read(fd, buf, read_size)) > 0)
+            while((rval = simplefs_read(fd, buf, 100)) > 0)
+            {
+                buf[rval] = '\0';
                 printf("%s", buf);
+            }
             if(rval < 0 )
                 cout<<"Read error!";
             simplefs_close(fd);
