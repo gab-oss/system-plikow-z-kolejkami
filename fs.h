@@ -405,23 +405,18 @@ int simplefs_unlink(char *name) {
 
 int simplefs_mkdir(char *name) {
     char filename[NAME_SIZE];
-    int fileId = check_path(name, filename);
-    if (fileId == -1 || fileInfos[fileId][1] != 0)
+    int dirId = check_path(name, filename);
+    if (dirId >= -1)
         //wrong path or file exists
         return -1;
 
-    fileId = -1 * (fileId + 2);
+    dirId = -1 * (dirId + 2);
 
-    if (strlen(filename) > NAME_SIZE || fileCount >= MAX_FILES || freeMemory < 1)
+    if (strlen(filename) > NAME_SIZE || fileCount >= MAX_FILES || freeMemory < sizeof(int))
         return -1;
 
     //find free memory for file
     struct inodeFree *temp = &head;
-
-    //open FS file
-    FILE *FS = fopen(FSAbsolutePath, "r+");
-    if (FS == NULL)
-        return 1;
 
     int i;
     for (i = 0; i < MAX_FILES; i++) {
@@ -430,23 +425,28 @@ int simplefs_mkdir(char *name) {
             break;
     }
 
+    //add dir to dir
+    int buf[1];
+    buf[0] = i;
+    simplefs_lseek(dirId, SEEK_SET, fileInfos[dirId][1]);
+    simplefs_write(dirId, (char *) buf, sizeof(int));
+
     //file metadata
     strcpy(fileNames[i], filename);
     fileInfos[i][0] = temp->base;    //position
-    fileInfos[i][1] = sizeof(int);          //file length
-    fileInfos[i][2] = 1;                    //directory
-    fileInfos[i][3] = 1;                    //read permission
-    fileInfos[i][4] = 1;                    //write permission
+    fileInfos[i][1] = sizeof(int);   //file length
+    fileInfos[i][2] = 1;             //directory
+    fileInfos[i][3] = 1;             //read permission
+    fileInfos[i][4] = 1;             //write permission
 
     fileCount++;
     updateMemory();
     freeMemory -= sizeof(int);
 
-    //add dir to dir
-    int buf[1];
-    buf[0] = i;
-    simplefs_lseek(fileId, SEEK_SET, fileInfos[fileId][1]);
-    simplefs_write(fileId, (char *) buf, sizeof(int));
+    //open FS file
+    FILE *FS = fopen(FSAbsolutePath, "r+");
+    if (FS == NULL)
+        return 1;
 
     updateMetadata(FS);
     fclose(FS);
@@ -465,16 +465,11 @@ int simplefs_creat(char *name, int mode) //name is a full path
 
     printf("name: %s, mode: %d, fileCount: %d, MAX_FILES: %d, freeMemory: %d\n", name, mode, fileCount, MAX_FILES,
            freeMemory);
-    if (strlen(name) > NAME_SIZE || fileCount >= MAX_FILES || freeMemory < 1)
+    if (strlen(name) > NAME_SIZE || fileCount >= MAX_FILES || freeMemory < sizeof(int))
         return -2;
 
     //find free memory for file
     struct inodeFree *temp = &head;
-
-    //open FS file
-    FILE *FS = fopen(FSAbsolutePath, "r+");
-    if (FS == NULL)
-        return 1;
 
     //permissions
     char readPerm = 0, writePerm = 0;
@@ -490,6 +485,12 @@ int simplefs_creat(char *name, int mode) //name is a full path
             break;
     }
 
+    //add file to dir
+    int buf[1];
+    buf[0] = i;
+    simplefs_lseek(dirdesc, SEEK_SET, fileInfos[dirdesc][1]);
+    simplefs_write(dirdesc, (char *) buf, sizeof(int));
+
     //file metadata
     strcpy(fileNames[i], filename);
     fileInfos[i][0] = temp->base;    //position
@@ -502,11 +503,10 @@ int simplefs_creat(char *name, int mode) //name is a full path
     updateMemory();
     freeMemory -= sizeof(int);
 
-    //add file to dir
-    int buf[1];
-    buf[0] = i;
-    simplefs_lseek(dirdesc, SEEK_SET, fileInfos[dirdesc][1]);
-    simplefs_write(dirdesc, (char *) buf, sizeof(int));
+    //open FS file
+    FILE *FS = fopen(FSAbsolutePath, "r+");
+    if (FS == NULL)
+        return 1;
 
     updateMetadata(FS);
     fclose(FS);
