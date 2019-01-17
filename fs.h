@@ -486,11 +486,11 @@ int simplefs_read(int fd, char *buf, int len) {
 
     //set position to file position + offset
     fseek(FS, fileInfos[fd][0] + posInFile[fd], SEEK_SET);
-    fread(buf, sizeof(char), len, FS);
-    posInFile[fd] += len;
-
+    int bytes_read = fread(buf, sizeof(char), len, FS);
+    posInFile[fd] += bytes_read;
+    buf[bytes_read] = '\0';
     fclose(FS);
-    return 0;
+    return bytes_read;
 }
 
 int simplefs_write(int fd, char *buf, int len) {
