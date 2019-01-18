@@ -298,6 +298,8 @@ int simplefs_defragment() {
         fileInfos[ord[0]][0] = METADATA_SIZE;
         fseek(FS, fileInfos[ord[0]][0], SEEK_SET);
         fwrite(buffer, sizeof(char), fileInfos[ord[0]][1], FS);
+
+        free(buffer);
     }
     for (int i = 1; i < fileCount; i++) {
         //move file to after previous one
@@ -308,6 +310,7 @@ int simplefs_defragment() {
         fileInfos[ord[i]][0] = fileInfos[ord[i - 1]][0] + fileInfos[ord[i - 1]][1] + 1;
         fseek(FS, fileInfos[ord[i]][0], SEEK_SET);
         fwrite(buffer, sizeof(char), fileInfos[ord[i]][1], FS);
+        free(buffer);
     }
 
     updateMetadata(FS);
@@ -343,7 +346,7 @@ int simplefs_close(int fd) {
 int simplefs_unlink(char *name) {
     char filename[NAME_SIZE];
     int fileId = check_path(name, filename);
-    if (fileId == 0 || fileId == -1 || (fileInfos[fileId][2] == 1 && fileInfos[fileId][1] == sizeof(int))) {
+    if (fileId == 0 || fileId == -1 || (fileInfos[fileId][2] == 1 && fileInfos[fileId][1] != sizeof(int))) {
         //no file or file is non-empty dir
         return -1;
     }
@@ -394,6 +397,8 @@ int simplefs_unlink(char *name) {
     fseek(FS, fileInfos[dirIdx][0] + sizeof(int),SEEK_SET);
     fwrite(buf, dirSize - sizeof(int), 1,FS);
     fileInfos[dirIdx][1] -= sizeof(int);
+
+    free(buf);
 
     updateMemory();
 
@@ -592,6 +597,8 @@ int simplefs_write(int fd, char *buf, int len) {
             fread(tempbuf, sizeof(char), fileInfos[fd][1], file);
             fseek(file, temp->base, SEEK_SET);
             fwrite(tempbuf, sizeof(char),fileInfos[fd][1], file);
+
+            free(tempbuf);
             //write
             fwrite(buf, sizeof(char), len, file);
 
@@ -651,6 +658,8 @@ int simplefs_ls(char name[]) {
                 printf("%s \n", fileNames[bufI[j]]);
             }
 
+            free(buf);
+            free(bufI);
             return 0;
         }
     }
@@ -678,6 +687,7 @@ int check_prev_dir(int prevdesc, char dir[]) {
     memcpy(bufI, buf, fileInfos[prevdesc][1]-sizeof(int));
     for (int j = 0; j < fileInfos[prevdesc][1]/sizeof(int) - 1; ++j) {
         if (strcmp(fileNames[bufI[j]], dir) == 0) { //dir found in prev
+            free(buf);
             return bufI[j];
         }
     }
