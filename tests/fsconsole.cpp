@@ -15,7 +15,7 @@ int main(int argc, char** argv)
     string PROMPT = ">";
     string input; // commandd read from cin
     string pwd ="./"; // working directory
-    simplefs_mount("/tmp/azx1.fs", 10000);
+    //simplefs_mount("/tmp/azx1.fs", 10000);
     while(true)
     {
         cout<<endl<<pwd<<PROMPT;
@@ -56,8 +56,9 @@ int main(int argc, char** argv)
                 continue;
             }
             string path = pwd +cmd_parts[1];
-            if (simplefs_unlink((char *)path.c_str()) < 0)
-                cout<<"rm error";
+            int rval = simplefs_unlink((char *)path.c_str()); 
+            if (rval < 0)
+                cout<<"rm error: "<<rval;
         }
         else if(cmd == "write")
         {// write <path> <line>
@@ -69,13 +70,12 @@ int main(int argc, char** argv)
             int fd = simplefs_open((char*)path.c_str(), FS_WRONLY);
             if(fd < 0)
             {
-                cout<<"Counldn't open "<<cmd_parts[1];
+                cout<<"Counldn't open "<<cmd_parts[1] << " error: "<<fd;
                 continue;
             }
             string line = cmd_parts[2];
             for(int i=3; i<cmd_parts.size();++i)
                 line+=" "+cmd_parts[i];
-            simplefs_lseek(fd, SEEK_SET, 0);
             if(simplefs_write(fd, (char*)line.c_str(), line.size()) < 0)    
                 cout<<"Write error";
             simplefs_close(fd);
@@ -92,7 +92,7 @@ int main(int argc, char** argv)
             int fd = simplefs_open((char*)path.c_str(), FS_RDONLY);
             if( fd < 0)
             {
-                cout<<"Couldn't open "<<cmd_parts[1];
+                cout<<"Couldn't open "<<cmd_parts[1]<<"error: "<<fd;
                 continue;
             }
             int whence=INT_MIN, offset=INT_MIN;
@@ -114,16 +114,14 @@ int main(int argc, char** argv)
 
             if(offset != INT_MIN && whence != INT_MIN)
                 simplefs_lseek(fd, whence, offset);
-            char buf[100];
+            int read_size = 100;
+            char buf[read_size];
             int rval;
-            simplefs_lseek(fd, SEEK_SET, 0);
-            while((rval = simplefs_read(fd, buf, 100)) > 0)
-            {
-                buf[rval] = '\0';
+            while((rval = simplefs_read(fd, buf, read_size)) > 0)
                 printf("%s", buf);
             }
             if(rval < 0 )
-                cout<<"Read error!";
+                cout<<"Read error: "<<rval;
             simplefs_close(fd);
         }
 

@@ -155,7 +155,7 @@ int simplefs_mount(char *name, int size) {
     strcpy(FSAbsolutePath, name);
     //check if enough space for metadata and first file
     if (size < METADATA_SIZE + sizeof(int))
-        return 1;
+        return -1;
 
     capacity = size;
     freeMemory = capacity - (METADATA_SIZE + sizeof(char));
@@ -331,7 +331,7 @@ int simplefs_open(char *name, int mode) {
 //	if(mutex_lock(fileId) != SFSQ_OK) {
 //        return SFS_UNLOCK_MUTEX_ERROR;
 //    }
-
+    posInFile[fileId] = 0; //set postion if file to 0
     return fileId;
 }
 
@@ -360,9 +360,9 @@ int simplefs_unlink(char *name) {
     //find dir with file
     char *dirname;
     char *temp = strtok(name, "/");
-    while(temp != nullptr) {
+    while(temp != NULL) {
         dirname = temp;
-        temp = strtok(nullptr, "/");
+        temp = strtok(NULL, "/");
         if(strcmp(temp,filename) == 0)
             break;
     }
@@ -472,8 +472,6 @@ int simplefs_creat(char *name, int mode) //name is a full path
 
     dirdesc = -1 * (dirdesc + 2);
 
-    printf("name: %s, mode: %d, fileCount: %d, MAX_FILES: %d, freeMemory: %d\n", name, mode, fileCount, MAX_FILES,
-           freeMemory);
     if (strlen(name) > NAME_SIZE || fileCount >= MAX_FILES || freeMemory < sizeof(int))
         return -2;
 
@@ -576,13 +574,13 @@ int simplefs_write(int fd, char *buf, int len) {
             //temporary save the part of the file after posInFile
             fseek(file, fileInfos[fd][0] + posInFile[fd], SEEK_SET);
             //write
-            fwrite(buf, sizeof(char), len, file);
+            int wr = fwrite(buf, sizeof(char), len, file);
             posInFile[fd] += sizeof(char) * len;
             fileInfos[fd][1] += sizeinc;
 
             updateMemory();
             fclose(file);
-            return 0;
+            return wr;
         }
         temp = temp->next;
     }
@@ -600,7 +598,7 @@ int simplefs_write(int fd, char *buf, int len) {
 
             free(tempbuf);
             //write
-            fwrite(buf, sizeof(char), len, file);
+            int wr = fwrite(buf, sizeof(char), len, file);
 
             fileInfos[fd][0] = temp->base;
             fileInfos[fd][1] += len * sizeof(char);
@@ -608,7 +606,7 @@ int simplefs_write(int fd, char *buf, int len) {
 
             updateMemory();
             fclose(file);
-            return 0;
+            return wr;
         }
 
         temp = temp->next;
