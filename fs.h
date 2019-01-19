@@ -346,7 +346,7 @@ int simplefs_close(int fd) {
 int simplefs_unlink(char *name) {
     char filename[NAME_SIZE];
     int fileId = check_path(name, filename);
-    if (fileId == 0 || fileId == -1 || (fileInfos[fileId][2] == 1 && fileInfos[fileId][1] != sizeof(int))) {
+    if (fileId <= 0 || (fileInfos[fileId][2] == 1 && fileInfos[fileId][1] != sizeof(int))) {
         //no file or file is non-empty dir
         return -1;
     }
