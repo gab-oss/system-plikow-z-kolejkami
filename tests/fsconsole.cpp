@@ -117,7 +117,7 @@ int main(int argc, char** argv)
             int read_size = 100;
             char buf[read_size];
             int rval;
-            while((rval = simplefs_read(fd, buf, read_size)) > 0)
+            while((rval = simplefs_read(fd, buf, read_size)) > 0){
                 printf("%s", buf);
             }
             if(rval < 0 )

@@ -523,8 +523,11 @@ int simplefs_creat(char *name, int mode) //name is a full path
 
 int simplefs_read(int fd, char *buf, int len) {
     //check permissions, if file is not dir, can be read and is long enoungh
-    if (fileInfos[fd][1] < 1 && fileInfos[fd][2] != 0 && fileInfos[fd][3] != 1 && fileInfos[fd][1] < len)
+    if (fileInfos[fd][1] < 1 && fileInfos[fd][2] != 0 && fileInfos[fd][3] != 1)
         return -1;
+
+    if(len > fileInfos[fd][1] - posInFile[fd])
+        len = fileInfos[fd][1] - posInFile[fd];
 
     FILE *FS = fopen(FSAbsolutePath, "r+");
 
