@@ -1,5 +1,9 @@
 #!/bin/bash
 
+ipcrm --all=msg
+rm ./sptest
 rm -f /tmp/test.fs
 gcc single_proc_test.c -o sptest
+echo "Running"
 ./sptest
+ipcrm --all=msg

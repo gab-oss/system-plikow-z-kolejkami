@@ -9,7 +9,7 @@
 #include <sys/types.h>
 #include <sys/ipc.h>
 #include <sys/msg.h>
-
+#include <errno.h>
 
 // Global constants
 #define MAX_FILES     16
@@ -24,21 +24,27 @@
 #define FS_WRONLY               2    // 010 - Write only
 #define FS_RDWR                 3    // 011 - Read and write
 
-#define SFS_LOCK_MUTEX_ERROR    -2
-#define SFS_UNLOCK_MUTEX_ERROR  -3
-#define SFS_CREATE_QUEUE_ERROR  -4
-#define SFS_DESTROY_QUEUE_ERROR -5
+#define SFS_LOCK_MUTEX_ERROR    -22
+#define SFS_UNLOCK_MUTEX_ERROR  -23
+#define SFS_CREATE_QUEUE_ERROR  -24
+#define SFS_DESTROY_QUEUE_ERROR -25
+#define SFS_LOCK_FILE_ERROR     -26
+#define SFS_UNLOCK_FILE_ERROR   -27
+#define SFS_FILE_LOCKED_ERROR   -28
 
 // ========= MESSAGE MUTEX START ===========
 
 #define SFS_QUEUE_KEY           "/simplefs_key"
 
 #define SFSQ_OK                 0
-#define SFSQ_MSGGET_ERROR       -1
-#define SFSQ_MSGRCV_ERROR       -2
-#define SFSQ_MSGSND_ERROR       -3
-#define SFSQ_MSGCREAT_ERROR     -4
-#define SFSQ_MSGDESTROY_ERROR   -5
+#define SFSQ_MSGGET_ERROR       -10
+#define SFSQ_MSGRCV_ERROR       -12
+#define SFSQ_MSGSND_ERROR       -13
+#define SFSQ_MSGCREAT_ERROR     -14
+#define SFSQ_MSGDESTROY_ERROR   -15
+#define SFSQ_FILE_LOCKED_ERROR  -16
+
+#define SFSQ_FS_MUTEX_TYPE      100
 
 /*
  * Message type for queue messages.
@@ -47,14 +53,85 @@
  */
 struct sfs_msg {
     long type;
+    pid_t pid;
 };
 
 
 int send_msg(int qid, long type) {
     struct sfs_msg message;
     message.type = type;
+    message.pid = getpid();
     return msgsnd(qid, &message, sizeof(message), MSG_NOERROR);
 }
+
+/*
+ */
+int lock_file(int fd) {
+    key_t key = ftok(SFS_QUEUE_KEY, 65);
+    int qid = msgget(key, 0666 | IPC_CREAT);
+    if (qid < 0) {
+        return SFSQ_MSGGET_ERROR;
+    }
+    int ret = send_msg(qid, fd + MAX_FILES + 1);
+    if (ret < 0) {
+        return SFSQ_MSGSND_ERROR;
+    }
+    return SFSQ_OK;
+}
+
+
+/*
+ */
+int unlock_file(int fd) {
+    key_t key = ftok(SFS_QUEUE_KEY, 65);
+    int qid = msgget(key, 0666 | IPC_CREAT);
+    if (qid < 0) {
+        return SFSQ_MSGGET_ERROR;
+    }
+    struct sfs_msg message;
+    ssize_t ret = msgrcv(qid, &message, sizeof(message), fd + MAX_FILES + 1, IPC_NOWAIT);
+    if (ret < 0 && errno != ENOMSG) {
+        return SFSQ_MSGRCV_ERROR;
+    }
+    if(errno != ENOMSG && message.pid != getpid()){
+        msgsnd(qid, &message, sizeof(message), MSG_NOERROR);
+        return SFSQ_FILE_LOCKED_ERROR;
+    }
+    return SFSQ_OK;
+}
+
+/*
+ */
+int mutex_lock_file(int fd) {
+    key_t key = ftok(SFS_QUEUE_KEY, 65);
+    int qid = msgget(key, 0666 | IPC_CREAT);
+    if (qid < 0) {
+        return SFSQ_MSGGET_ERROR;
+    }
+    struct sfs_msg message;
+    ssize_t ret = msgrcv(qid, &message, sizeof(message), fd, MSG_NOERROR);
+    if (ret < 0) {
+        return SFSQ_MSGRCV_ERROR;
+    }
+    return SFSQ_OK;
+}
+
+
+/*
+ */
+int mutex_unlock_file(int fd) {
+    key_t key = ftok(SFS_QUEUE_KEY, 65);
+    int qid = msgget(key, 0666 | IPC_CREAT);
+    if (qid < 0) {
+        return SFSQ_MSGGET_ERROR;
+    }
+    int ret = send_msg(qid, fd);
+    if (ret < 0) {
+        return SFSQ_MSGSND_ERROR;
+    }
+    return SFSQ_OK;
+}
+
 
 /*
  * Blocks the execution of the process until mutex for a file with
@@ -68,7 +145,7 @@ int mutex_lock() {
         return SFSQ_MSGGET_ERROR;
     }
     struct sfs_msg message;
-    ssize_t ret = msgrcv(qid, &message, sizeof(message), 1, MSG_NOERROR);
+    ssize_t ret = msgrcv(qid, &message, sizeof(message), SFSQ_FS_MUTEX_TYPE, MSG_NOERROR);
     if (ret < 0) {
         return SFSQ_MSGRCV_ERROR;
     }
@@ -85,7 +162,7 @@ int mutex_unlock() {
     if (qid < 0) {
         return SFSQ_MSGGET_ERROR;
     }
-    ssize_t ret = send_msg(qid, 1);
+    ssize_t ret = send_msg(qid, SFSQ_FS_MUTEX_TYPE);
     if (ret < 0) {
         return SFSQ_MSGSND_ERROR;
     }
@@ -102,17 +179,17 @@ int queue_init() {
     if (qid < 0) {
         return SFSQ_MSGCREAT_ERROR;
     }
-    ssize_t ret = send_msg(qid, 1);
+    ssize_t ret = send_msg(qid, SFSQ_FS_MUTEX_TYPE);
     if (ret < 0) {
         return SFSQ_MSGSND_ERROR;
     }
-    return qid;
+    return SFSQ_OK;
 }
 
 
 int queue_destroy() {
     key_t key = ftok(SFS_QUEUE_KEY, 65);
-    int qid = msgctl(key, IPC_RMID, nullptr);
+    int qid = msgctl(key, IPC_RMID, NULL);
     if (qid < 0) {
         return SFSQ_MSGDESTROY_ERROR;
     }
@@ -144,15 +221,16 @@ struct inodeFree {
     struct inodeFree *next;
 } head;
 
+
+
+// ========= INTERNAL FUNCTIONS START ===========
+
+
 void updateMemory();
 
 void readFS(char name[]);
 
 int check_path(char *name, char *_filename);
-
-int simplefs_write(int, char *, int);
-
-int simplefs_lseek(int, int, int);
 
 //get file indexes in order as written in FS
 void getSortedOrder(int order[]) {
@@ -182,65 +260,10 @@ void updateMetadata(FILE *FS) {
     }
 }
 
-int simplefs_mount(char *name, int size) {
-    if (access(name, F_OK) != -1) {
-        readFS(name);
-        return 0;
-    }
-    // Initialize queue
-    if (queue_init() != SFSQ_OK) {
-        return SFS_CREATE_QUEUE_ERROR;
-    }
-    if (mutex_lock() != SFSQ_OK) {
-        return SFS_LOCK_MUTEX_ERROR;
-    }
-    strcpy(FSAbsolutePath, name);
-    //check if enough space for metadata and first file
-    if (size < METADATA_SIZE + sizeof(int)) {
-        if (mutex_unlock() != SFSQ_OK) {
-            return SFS_UNLOCK_MUTEX_ERROR;
-        }
-        return -1;
-    }
-
-    capacity = size;
-    freeMemory = capacity - (METADATA_SIZE + sizeof(char));
-
-    //first dir
-    fileCount++;
-
-    strcpy(fileNames[0], ".");
-    fileInfos[0][0] = METADATA_SIZE;
-    fileInfos[0][1] = sizeof(int);
-    fileInfos[0][2] = 1;
-    fileInfos[0][3] = 1;
-    fileInfos[0][4] = 1;
-
-    FILE *file = fopen(name, "w");
-
-    //write size of FS to metadata
-    fwrite(&size, sizeof(int), 1, file);
-    updateMetadata(file);
-    updateMemory();
-
-    fclose(file);
-    if (mutex_unlock() != SFSQ_OK) {
-        return SFS_UNLOCK_MUTEX_ERROR;
-    }
-    return 0;
-}
-
-
 void readFS(char name[]) {
-    if (mutex_lock() != SFSQ_OK) {
-        return SFS_LOCK_MUTEX_ERROR;
-    }
     strcpy(FSAbsolutePath, name);
     FILE *file = fopen(name, "r");
     if (file == NULL) {
-        if (mutex_unlock() != SFSQ_OK) {
-            return SFS_UNLOCK_MUTEX_ERROR;
-        }
         return;
     }
 
@@ -264,26 +287,8 @@ void readFS(char name[]) {
     }
     updateMemory();
     fclose(file);
-    if (mutex_unlock() != SFSQ_OK) {
-        return SFS_UNLOCK_MUTEX_ERROR;
-    }
-    return 0;
 }
 
-
-int simplefs_unmount(char *name) {
-    if (mutex_lock() != SFSQ_OK) {
-        return SFS_LOCK_MUTEX_ERROR;
-    }
-    int ret = remove(name);
-    // No need to unlock, just destroy
-    if (queue_destroy() != SFSQ_OK) {
-        return SFS_DESTROY_QUEUE_ERROR;
-    }
-    return ret;
-}
-
-//TODO: mutexy
 void updateMemory() {
     int i = 0;
     int ord[MAX_FILES];
@@ -348,367 +353,32 @@ void updateMemory() {
     }
 }
 
-//TODO: mutexy
-int simplefs_defragment() {
-    if (mutex_lock() != SFSQ_OK) {
-        return SFS_LOCK_MUTEX_ERROR;
-    }
-    FILE *FS = fopen(FSAbsolutePath, "r+");
-    if (FS == NULL){
-        if (mutex_unlock() != SFSQ_OK) {
-            return SFS_UNLOCK_MUTEX_ERROR;
-        }
+int internal_lseek(int fd, int whence, int offset) {
+    if (whence == SEEK_SET)
+        posInFile[fd] = offset;
+    else if (whence == SEEK_CUR)
+        posInFile[fd] += offset;
+    else if (whence == SEEK_END)
+        posInFile[fd] = fileInfos[fd][1] - offset;
+    else
         return -1;
-    }
-
-    int ord[MAX_FILES];
-    getSortedOrder(ord);
-
-    if (fileCount > 0) {
-        //write first file to buffer
-        char *buffer = (char *) malloc(fileInfos[ord[0]][1]);
-        fseek(FS, fileInfos[ord[0]][0], SEEK_SET);
-        fread(buffer, sizeof(char), fileInfos[ord[0]][1], FS);
-
-        //move first file to after metadata
-        fileInfos[ord[0]][0] = METADATA_SIZE;
-        fseek(FS, fileInfos[ord[0]][0], SEEK_SET);
-        fwrite(buffer, sizeof(char), fileInfos[ord[0]][1], FS);
-
-        free(buffer);
-    }
-    for (int i = 1; i < fileCount; i++) {
-        //move file to after previous one
-        char *buffer = (char *) malloc(fileInfos[ord[i]][1]);
-        fseek(FS, fileInfos[ord[i]][0], SEEK_SET);
-        fread(buffer, sizeof(char), fileInfos[ord[i]][1], FS);
-
-        fileInfos[ord[i]][0] = fileInfos[ord[i - 1]][0] + fileInfos[ord[i - 1]][1] + 1;
-        fseek(FS, fileInfos[ord[i]][0], SEEK_SET);
-        fwrite(buffer, sizeof(char), fileInfos[ord[i]][1], FS);
-        free(buffer);
-    }
-
-    updateMetadata(FS);
-    updateMemory();
-    fclose(FS);
-    if (mutex_unlock() != SFSQ_OK) {
-        return SFS_UNLOCK_MUTEX_ERROR;
-    }
     return 0;
 }
 
-int simplefs_defragment() {
-    if (mutex_lock() != SFSQ_OK) {
-        return SFS_LOCK_MUTEX_ERROR;
-    }
-    FILE *FS = fopen(FSAbsolutePath, "r+");
-    if (FS == nullptr) {
-        if (mutex_unlock() != SFSQ_OK) {
-            return SFS_UNLOCK_MUTEX_ERROR;
-        }
-        return -1;
-    }
+int internal_write(int fd, char *buf, int len) {
 
-    int *ord = getSortedOrder();
-
-    if (fileCount > 0) {
-        //write first file to buffer
-        char *buffer = (char *) malloc(fileInfos[ord[0]][1]);
-        fseek(FS, fileInfos[ord[0]][0], SEEK_SET);
-        fread(buffer, sizeof(char), fileInfos[ord[0]][1], FS);
-
-        //move first file to after metadata
-        fileInfos[ord[0]][0] = sizeof(int) + MAX_FILES * (INFO_SIZE + NAME_SIZE) + 1;
-        fseek(FS, fileInfos[ord[0]][0], SEEK_SET);
-        fwrite(buffer, sizeof(char), fileInfos[ord[0]][1], FS);
-    }
-    for (int i = 1; i < fileCount; i++) {
-        //move file to after previous one
-        char *buffer = (char *) malloc(fileInfos[ord[i]][1]);
-        fseek(FS, fileInfos[ord[i]][0], SEEK_SET);
-        fread(buffer, sizeof(char), fileInfos[ord[i]][1], FS);
-
-        fileInfos[ord[i]][0] = fileInfos[ord[i - 1]][0] + fileInfos[ord[i - 1]][1] + 1;
-        fseek(FS, fileInfos[ord[i]][0], SEEK_SET);
-        fwrite(buffer, sizeof(char), fileInfos[ord[i]][1], FS);
-    }
-
-    updateMetadata(FS);
-    updateMemory();
-    fclose(FS);
-    if (mutex_unlock() != SFSQ_OK) {
-        return SFS_UNLOCK_MUTEX_ERROR;
-    }
-    return 0;
-}
-
-int simplefs_open(char *name, int mode) {
-    if (mutex_lock() != SFSQ_OK) {
-        return SFS_LOCK_MUTEX_ERROR;
-    }
-    char filename[NAME_SIZE];
-    int fileId = check_path(name, filename);
-    if (fileId < 0 || fileInfos[fileId][2] == 1) {
-        //no file or file is dir
-        return -1;
-    }
-
-    posInFile[fileId] = 0; //set postion if file to 0
-    if (mutex_unlock() != SFSQ_OK) {
-        return SFS_UNLOCK_MUTEX_ERROR;
-    }
-    return fileId;
-}
-
-int simplefs_close(int fd) {
-    return 0;
-}
-
-//TODO: mutexy
-int simplefs_unlink(char *name) {
-    if (mutex_lock() != SFSQ_OK) {
-        return SFS_LOCK_MUTEX_ERROR;
-    }
-    char filename[NAME_SIZE];
-    int fileId = check_path(name, filename);
-    if (fileId <= 0 || (fileInfos[fileId][2] == 1 && fileInfos[fileId][1] != sizeof(int))) {
-        //no file or file is non-empty dir
-        return -1;
-    }
-
-    //clear filename and info of deleted file
-    fileCount--;
-    freeMemory += fileInfos[fileId][1];
-    memset(fileNames[fileId], 0, NAME_SIZE);
-    memset(fileInfos[fileId], 0, INFO_SIZE * sizeof(int));
-
-    //find dir with file
-    char *dirname;
-    char *temp = strtok(name, "/");
-    while(temp != NULL) {
-        dirname = temp;
-        temp = strtok(NULL, "/");
-        if(strcmp(temp,filename) == 0)
-            break;
-    }
-    //find dir index
-    int dirIdx = 0;
-    for(;dirIdx < MAX_FILES; ++dirIdx)
-    {
-        if(strcmp(dirname, fileNames[dirIdx]) == 0)
-            break;
-    }
-    //rewrite dir
-
-    FILE *FS = fopen(FSAbsolutePath, "r+");
-    if (FS == NULL)
-        return 1;
-
-    //read parent dir
-    int dirSize = fileInfos[dirIdx][1] - sizeof(int);
-    int *buf = (int*)malloc(dirSize);
-    fseek(FS, fileInfos[dirIdx][0] + sizeof(int),SEEK_SET);
-    fread(buf, dirSize, 1, FS);
-
-    //find position of file to be removed
-    int i = 0;
-    while(buf[i] != fileId)
-        ++i;
-
-    //move rest of file to delete
-    memmove(buf+i, buf+i+1,dirSize - i - 1);
-
-    //save change to dir
-    fseek(FS, fileInfos[dirIdx][0] + sizeof(int),SEEK_SET);
-    fwrite(buf, dirSize - sizeof(int), 1,FS);
-    fileInfos[dirIdx][1] -= sizeof(int);
-
-    free(buf);
-
-    updateMemory();
-
-    //save changes to FS
-
-    updateMetadata(FS);
-
-    fclose(FS);
-    if (mutex_unlock() != SFSQ_OK) {
-        return SFS_UNLOCK_MUTEX_ERROR;
-    }
-    return 0;
-
-
-}
-
-int simplefs_mkdir(char *name) {
-    if (mutex_lock() != SFSQ_OK) {
-        return SFS_LOCK_MUTEX_ERROR;
-    }
-    char filename[NAME_SIZE];
-    int dirId = check_path(name, filename);
-    if (dirId >= -1)
-        //wrong path or file exists
-        return -1;
-
-    dirId = -1 * (dirId + 2);
-
-    if (strlen(filename) > NAME_SIZE || fileCount >= MAX_FILES || freeMemory < sizeof(int))
-        return -1;
-
-    //find free memory for file
-    struct inodeFree *temp = &head;
-
-    int i;
-    for (i = 0; i < MAX_FILES; i++) {
-        //find empty descriptor
-        if (fileInfos[i][1] == 0)
-            break;
-    }
-
-    //add dir to dir
-    int buf[1];
-    buf[0] = i;
-    simplefs_lseek(dirId, SEEK_SET, fileInfos[dirId][1]);
-    simplefs_write(dirId, (char *) buf, sizeof(int));
-
-    //file metadata
-    strcpy(fileNames[i], filename);
-    fileInfos[i][0] = temp->base;    //position
-    fileInfos[i][1] = sizeof(int);   //file length
-    fileInfos[i][2] = 1;             //directory
-    fileInfos[i][3] = 1;             //read permission
-    fileInfos[i][4] = 1;             //write permission
-
-    fileCount++;
-    updateMemory();
-    freeMemory -= sizeof(int);
-
-    //open FS file
-    FILE *FS = fopen(FSAbsolutePath, "r+");
-    if (FS == NULL)
-        return 1;
-
-    updateMetadata(FS);
-    fclose(FS);
-    if (mutex_unlock() != SFSQ_OK) {
-        return SFS_UNLOCK_MUTEX_ERROR;
-    }
-    return 0;
-}
-
-int simplefs_creat(char *name, int mode) //name is a full path
-{
-    if (mutex_lock() != SFSQ_OK) {
-        return SFS_LOCK_MUTEX_ERROR;
-    }
-    char filename[NAME_SIZE];
-    int dirdesc = check_path(name, filename);
-    if (dirdesc > -2) //name = path, filename = resulting filename
-        return -1;
-
-    dirdesc = -1 * (dirdesc + 2);
-
-    if (strlen(name) > NAME_SIZE || fileCount >= MAX_FILES || freeMemory < sizeof(int))
-        return -2;
-
-    //find free memory for file
-    struct inodeFree *temp = &head;
-
-    //permissions
-    char readPerm = 0, writePerm = 0;
-    if (mode == FS_RDONLY || mode == FS_RDWR)
-        readPerm = 1;
-    if (mode == FS_WRONLY || mode == FS_RDWR)
-        writePerm = 1;
-
-    int i;
-    for (i = 0; i < MAX_FILES; i++) {
-        //find empty descriptor
-        if (fileInfos[i][1] == 0)
-            break;
-    }
-
-    //add file to dir
-    int buf[1];
-    buf[0] = i;
-    simplefs_lseek(dirdesc, SEEK_SET, fileInfos[dirdesc][1]);
-    simplefs_write(dirdesc, (char *) buf, sizeof(int));
-
-    //file metadata
-    strcpy(fileNames[i], filename);
-    fileInfos[i][0] = temp->base;    //position
-    fileInfos[i][1] = sizeof(int);   //file length
-    fileInfos[i][2] = 0;            //not a directory
-    fileInfos[i][3] = readPerm;        //read permission
-    fileInfos[i][4] = writePerm;    //write permission
-
-    fileCount++;
-    updateMemory();
-    freeMemory -= sizeof(int);
-
-    //open FS file
-    FILE *FS = fopen(FSAbsolutePath, "r+");
-    if (FS == NULL)
-        return 1;
-
-    updateMetadata(FS);
-    fclose(FS);
-    if (mutex_unlock() != SFSQ_OK) {
-        return SFS_UNLOCK_MUTEX_ERROR;
-    }
-    return 0;
-}
-
-int simplefs_read(int fd, char *buf, int len) {
-    if (mutex_lock() != SFSQ_OK) {
-        return SFS_LOCK_MUTEX_ERROR;
-    }
-    //check permissions, if file is not dir, can be read and is long enoungh
-    if (fileInfos[fd][1] < 1 && fileInfos[fd][2] != 0 && fileInfos[fd][3] != 1)
-        return -1;
-
-    if(len > fileInfos[fd][1] - posInFile[fd])
-        len = fileInfos[fd][1] - posInFile[fd];
-
-    FILE *FS = fopen(FSAbsolutePath, "r+");
-
-    //set position to file position + offset
-    fseek(FS, fileInfos[fd][0] + posInFile[fd], SEEK_SET);
-    int bytes_read = fread(buf, sizeof(char), len, FS);
-    posInFile[fd] += bytes_read;
-    fclose(FS);
-    if (mutex_unlock() != SFSQ_OK) {
-        return SFS_UNLOCK_MUTEX_ERROR;
-    }
-    return bytes_read;
-}
-
-int simplefs_write(int fd, char *buf, int len) {
-    if (mutex_lock() != SFSQ_OK) {
-        return SFS_LOCK_MUTEX_ERROR;
-    }
     //check if there's enough memory
     if (freeMemory < sizeof(char) * len) {
-        if (mutex_unlock() != SFSQ_OK) {
-            return SFS_UNLOCK_MUTEX_ERROR;
-        }
         return -1;
     }
 
     //fd is a valid descriptor
     if (fd >= fileCount) {
-        if (mutex_unlock() != SFSQ_OK) {
-            return SFS_UNLOCK_MUTEX_ERROR;
-        }
         return -2;
     }
 
     //write permission's set
     if (!fileInfos[fd][4]) {
-        if (mutex_unlock() != SFSQ_OK) {
-            return SFS_UNLOCK_MUTEX_ERROR;
-        }
         return -3;
     }
 
@@ -740,9 +410,6 @@ int simplefs_write(int fd, char *buf, int len) {
 
             updateMemory();
             fclose(file);
-            if (mutex_unlock() != SFSQ_OK) {
-                return SFS_UNLOCK_MUTEX_ERROR;
-            }
             return wr;
         }
         temp = temp->next;
@@ -769,9 +436,6 @@ int simplefs_write(int fd, char *buf, int len) {
 
             updateMemory();
             fclose(file);
-            if (mutex_unlock() != SFSQ_OK) {
-                return SFS_UNLOCK_MUTEX_ERROR;
-            }
             return wr;
         }
 
@@ -780,79 +444,26 @@ int simplefs_write(int fd, char *buf, int len) {
 
     fclose(file);
     //no block large enough
-    if (mutex_unlock() != SFSQ_OK) {
-        return SFS_UNLOCK_MUTEX_ERROR;
-    }
     return -1;
 
 }
 
-int simplefs_lseek(int fd, int whence, int offset) {
-    if (mutex_lock() != SFSQ_OK) {
-        return SFS_LOCK_MUTEX_ERROR;
-    }
-    if (whence == SEEK_SET)
-        posInFile[fd] = offset;
-    else if (whence == SEEK_CUR)
-        posInFile[fd] += offset;
-    else if (whence == SEEK_END)
-        posInFile[fd] = fileInfos[fd][1] - offset;
-    else {
-        if (mutex_unlock() != SFSQ_OK) {
-            return SFS_UNLOCK_MUTEX_ERROR;
-        }
+int internal_read(int fd, char *buf, int len) {
+    //check permissions, if file is not dir, can be read and is long enoungh
+    if (fileInfos[fd][1] < 1 && fileInfos[fd][2] != 0 && fileInfos[fd][3] != 1)
         return -1;
-    }
 
-    if (mutex_unlock() != SFSQ_OK) {
-        return SFS_UNLOCK_MUTEX_ERROR;
-    }
-    return 0;
-}
+    if(len > fileInfos[fd][1] - posInFile[fd])
+        len = fileInfos[fd][1] - posInFile[fd];
 
-int simplefs_ls(char name[]) {
-    if (mutex_lock() != SFSQ_OK) {
-        return SFS_LOCK_MUTEX_ERROR;
-    }
-    char filename[NAME_SIZE];
-    if (check_path(name, filename) < 0 && strcmp(name, fileNames[0]) != 0) { //name = path
-        if (mutex_unlock() != SFSQ_OK) {
-            return SFS_UNLOCK_MUTEX_ERROR;
-        }
-        return -1;
-    }
-    else if(strcmp(name, fileNames[0]) == 0)
-    {//dir is root
-        strcpy(filename, fileNames[0]);
-    }
+    FILE *FS = fopen(FSAbsolutePath, "r+");
 
-    //strcpy(filename, name); //name = filename
-    for (int i = 0; i < fileCount; ++i) {
-        if (strcmp(filename, fileNames[i]) == 0) {
-            char *buf = (char*)malloc(fileInfos[i][1]-sizeof(int));
-            simplefs_lseek(i, SEEK_SET, sizeof(int));
-            simplefs_read(i, buf, fileInfos[i][1]-sizeof(int));
-
-            //first byte is just flag, not id
-            int *bufI = (int*)malloc(fileInfos[i][1]-sizeof(int));
-            memcpy(bufI, buf, fileInfos[i][1]-sizeof(int));
-            for (int j = 0; j < fileInfos[i][1]/sizeof(int)-1; ++j) {
-                printf("%s \n", fileNames[bufI[j]]);
-            }
-
-            free(buf);
-            free(bufI);
-            if (mutex_unlock() != SFSQ_OK) {
-                return SFS_UNLOCK_MUTEX_ERROR;
-            }
-            return 0;
-        }
-    }
-    //directory not found
-    if (mutex_unlock() != SFSQ_OK) {
-        return SFS_UNLOCK_MUTEX_ERROR;
-    }
-    return -1;
+    //set position to file position + offset
+    fseek(FS, fileInfos[fd][0] + posInFile[fd], SEEK_SET);
+    int bytes_read = fread(buf, sizeof(char), len, FS);
+    posInFile[fd] += bytes_read;
+    fclose(FS);
+    return bytes_read;
 }
 
 int check_prev_dir(int prevdesc, char dir[]) {
@@ -868,8 +479,8 @@ int check_prev_dir(int prevdesc, char dir[]) {
         return -1;
 
     char *buf = (char*)malloc(fileInfos[prevdesc][1] - sizeof(int));
-    simplefs_lseek(prevdesc, SEEK_SET, sizeof(int));
-    simplefs_read(prevdesc, buf, fileInfos[prevdesc][1] - sizeof(int)); //read prev to buf
+    internal_lseek(prevdesc, SEEK_SET, sizeof(int));
+    internal_read(prevdesc, buf, fileInfos[prevdesc][1] - sizeof(int)); //read prev to buf
     //first byte is just flag, not id
     int *bufI = (int*)malloc(fileInfos[prevdesc][1] - sizeof(int));
     memcpy(bufI, buf, fileInfos[prevdesc][1]-sizeof(int));
@@ -933,5 +544,478 @@ int check_path(char *name, char *_filename) {
     else
         return -1 * dirdesc - 2;
 }
+
+int internal_defragment() {
+    FILE *FS = fopen(FSAbsolutePath, "r+");
+    if (FS == NULL){
+        return -1;
+    }
+
+    int ord[MAX_FILES];
+    getSortedOrder(ord);
+
+    if (fileCount > 0) {
+        //write first file to buffer
+        char *buffer = (char *) malloc(fileInfos[ord[0]][1]);
+        fseek(FS, fileInfos[ord[0]][0], SEEK_SET);
+        fread(buffer, sizeof(char), fileInfos[ord[0]][1], FS);
+
+        //move first file to after metadata
+        fileInfos[ord[0]][0] = METADATA_SIZE;
+        fseek(FS, fileInfos[ord[0]][0], SEEK_SET);
+        fwrite(buffer, sizeof(char), fileInfos[ord[0]][1], FS);
+
+        free(buffer);
+    }
+    for (int i = 1; i < fileCount; i++) {
+        //move file to after previous one
+        char *buffer = (char *) malloc(fileInfos[ord[i]][1]);
+        fseek(FS, fileInfos[ord[i]][0], SEEK_SET);
+        fread(buffer, sizeof(char), fileInfos[ord[i]][1], FS);
+
+        fileInfos[ord[i]][0] = fileInfos[ord[i - 1]][0] + fileInfos[ord[i - 1]][1] + 1;
+        fseek(FS, fileInfos[ord[i]][0], SEEK_SET);
+        fwrite(buffer, sizeof(char), fileInfos[ord[i]][1], FS);
+        free(buffer);
+    }
+
+    updateMetadata(FS);
+    updateMemory();
+    fclose(FS);
+    return 0;
+}
+
+int internal_creat(char *name, int mode){
+    char filename[NAME_SIZE];
+    int dirdesc = check_path(name, filename);
+    if (dirdesc > -2) //name = path, filename = resulting filename
+        return -1;
+
+    dirdesc = -1 * (dirdesc + 2);
+
+    if (strlen(name) > NAME_SIZE || fileCount >= MAX_FILES || freeMemory < sizeof(int))
+        return -2;
+
+    //find free memory for file
+    struct inodeFree *temp = &head;
+
+    //permissions
+    char readPerm = 0, writePerm = 0;
+    if (mode == FS_RDONLY || mode == FS_RDWR)
+        readPerm = 1;
+    if (mode == FS_WRONLY || mode == FS_RDWR)
+        writePerm = 1;
+
+    int i;
+    for (i = 0; i < MAX_FILES; i++) {
+        //find empty descriptor
+        if (fileInfos[i][1] == 0)
+            break;
+    }
+
+    //add file to dir
+    int buf[1];
+    buf[0] = i;
+    internal_lseek(dirdesc, SEEK_SET, fileInfos[dirdesc][1]);
+    internal_write(dirdesc, (char *) buf, sizeof(int));
+
+    //file metadata
+    strcpy(fileNames[i], filename);
+    fileInfos[i][0] = temp->base;    //position
+    fileInfos[i][1] = sizeof(int);   //file length
+    fileInfos[i][2] = 0;            //not a directory
+    fileInfos[i][3] = readPerm;        //read permission
+    fileInfos[i][4] = writePerm;    //write permission
+
+    fileCount++;
+    updateMemory();
+    freeMemory -= sizeof(int);
+
+    //open FS file
+    FILE *FS = fopen(FSAbsolutePath, "r+");
+    if (FS == NULL)
+        return -1;
+
+    updateMetadata(FS);
+    fclose(FS);
+
+    return i;
+}
+
+
+// ========= INTERNAL FUNCTIONS END =============
+
+// ========= EXTERNAL API START =================
+
+int simplefs_unmount(char *name) {
+    if (mutex_lock() != SFSQ_OK) {
+        return SFS_LOCK_MUTEX_ERROR;
+    }
+    int ret = remove(name);
+    // No need to unlock, just destroy
+    if (queue_destroy() != SFSQ_OK) {
+        return SFS_DESTROY_QUEUE_ERROR;
+    }
+    return ret;
+}
+
+int simplefs_read(int fd, char *buf, int len) {
+    if (mutex_lock_file(fd) != SFSQ_OK) {
+        return SFS_LOCK_MUTEX_ERROR;
+    }
+    int ret = internal_read(fd, buf, len);
+    if (mutex_unlock_file(fd) != SFSQ_OK) {
+        return SFS_UNLOCK_MUTEX_ERROR;
+    }
+    return ret;
+}
+
+int simplefs_write(int fd, char *buf, int len) {
+    if (mutex_lock_file(fd) != SFSQ_OK) {
+        return SFS_LOCK_MUTEX_ERROR;
+    }
+    int unlock_file_ret = unlock_file(fd);
+    if(unlock_file_ret == SFSQ_FILE_LOCKED_ERROR){
+        if (mutex_unlock_file(fd) != SFSQ_OK) {
+            return SFS_UNLOCK_MUTEX_ERROR;
+        }
+        return SFS_FILE_LOCKED_ERROR;
+    }
+    if(unlock_file_ret != SFSQ_OK){
+        if (mutex_unlock_file(fd) != SFSQ_OK) {
+            return SFS_UNLOCK_MUTEX_ERROR;
+        }
+        return SFS_UNLOCK_MUTEX_ERROR;
+    }
+    int ret = internal_write(fd, buf, len);
+    if (mutex_unlock_file(fd) != SFSQ_OK) {
+        return SFS_UNLOCK_MUTEX_ERROR;
+    }
+    return ret;
+
+}
+
+int simplefs_lseek(int fd, int whence, int offset) {
+    if (mutex_lock_file(fd) != SFSQ_OK) {
+        return SFS_LOCK_MUTEX_ERROR;
+    }
+    int ret = internal_lseek(fd, whence, offset);
+    if (mutex_unlock_file(fd) != SFSQ_OK) {
+        return SFS_UNLOCK_MUTEX_ERROR;
+    }
+    return ret;
+}
+
+
+int simplefs_close(int fd) {
+//    if (unlock_file(fd) != SFSQ_OK) {
+//        return SFS_UNLOCK_FILE_ERROR;
+//    }
+    return 0;
+}
+
+
+int simplefs_defragment() {
+    if (mutex_lock() != SFSQ_OK) {
+        return SFS_LOCK_MUTEX_ERROR;
+    }
+    int ret = internal_defragment();
+    if (mutex_unlock() != SFSQ_OK) {
+        return SFS_UNLOCK_MUTEX_ERROR;
+    }
+    return ret;
+}
+
+int simplefs_creat(char *name, int mode) {
+    if (mutex_lock() != SFSQ_OK) {
+        return SFS_LOCK_MUTEX_ERROR;
+    }
+    int ret = 0;
+    int fd = internal_creat(name, mode);
+    if(fd >= 0) {
+        if (mutex_unlock_file(fd) != SFSQ_OK) {
+            ret = SFS_UNLOCK_FILE_ERROR;
+        }
+    } else {
+        ret = fd;
+    }
+    if (mutex_unlock() != SFSQ_OK) {
+        return SFS_UNLOCK_MUTEX_ERROR;
+    }
+    return ret;
+}
+
+
+// ========= EXTERNAL API END ===================
+
+
+
+int simplefs_mount(char *name, int size) {
+    if (access(name, F_OK) != -1) {
+        readFS(name);
+        return 0;
+    }
+    // Initialize queue
+    if (queue_init() != SFSQ_OK) {
+        return SFS_CREATE_QUEUE_ERROR;
+    }
+    if (mutex_lock() != SFSQ_OK) {
+        return SFS_LOCK_MUTEX_ERROR;
+    }
+    strcpy(FSAbsolutePath, name);
+    //check if enough space for metadata and first file
+    if (size < METADATA_SIZE + sizeof(int)) {
+//        if (mutex_unlock() != SFSQ_OK) {
+//            return SFS_UNLOCK_MUTEX_ERROR;
+//        }
+        return -1;
+    }
+
+    capacity = size;
+    freeMemory = capacity - (METADATA_SIZE + sizeof(char));
+
+    //first dir
+    fileCount++;
+
+    strcpy(fileNames[0], ".");
+    fileInfos[0][0] = METADATA_SIZE;
+    fileInfos[0][1] = sizeof(int);
+    fileInfos[0][2] = 1;
+    fileInfos[0][3] = 1;
+    fileInfos[0][4] = 1;
+
+    FILE *file = fopen(name, "w");
+
+    //write size of FS to metadata
+    fwrite(&size, sizeof(int), 1, file);
+    updateMetadata(file);
+    updateMemory();
+
+    fclose(file);
+    if (mutex_unlock() != SFSQ_OK) {
+        return SFS_UNLOCK_MUTEX_ERROR;
+    }
+    return 0;
+}
+
+int simplefs_open(char *name, int mode) {
+    if (mutex_lock() != SFSQ_OK) {
+        return SFS_LOCK_MUTEX_ERROR;
+    }
+    char filename[NAME_SIZE];
+    int fileId = check_path(name, filename);
+    if (fileId < 0 || fileInfos[fileId][2] == 1) {
+        //no file or file is dir
+        if (mutex_unlock() != SFSQ_OK) {
+            return SFS_UNLOCK_MUTEX_ERROR;
+        }
+        return -1;
+    }
+    posInFile[fileId] = 0; //set postion if file to 0
+    if (fileInfos[fileId][4] && (mode == FS_WRONLY || mode == FS_RDWR)) {
+        int unlock_file_ret = unlock_file(fileId);
+        if(unlock_file_ret == SFSQ_FILE_LOCKED_ERROR){
+            if (mutex_unlock() != SFSQ_OK) {
+                return SFS_UNLOCK_MUTEX_ERROR;
+            }
+            return SFS_FILE_LOCKED_ERROR;
+        }
+        if(unlock_file_ret != SFSQ_OK){
+            if (mutex_unlock() != SFSQ_OK) {
+                return SFS_UNLOCK_MUTEX_ERROR;
+            }
+            return SFS_UNLOCK_MUTEX_ERROR;
+        }
+        lock_file(fileId);
+    }
+    if (mutex_unlock() != SFSQ_OK) {
+        return SFS_UNLOCK_MUTEX_ERROR;
+    }
+    return fileId;
+}
+
+
+
+//TODO: mutexy
+int simplefs_unlink(char *name) {
+//    if (mutex_lock() != SFSQ_OK) {
+//        return SFS_LOCK_MUTEX_ERROR;
+//    }
+    char filename[NAME_SIZE];
+    int fileId = check_path(name, filename);
+    if (fileId <= 0 || (fileInfos[fileId][2] == 1 && fileInfos[fileId][1] != sizeof(int))) {
+        //no file or file is non-empty dir
+        return -1;
+    }
+
+    //clear filename and info of deleted file
+    fileCount--;
+    freeMemory += fileInfos[fileId][1];
+    memset(fileNames[fileId], 0, NAME_SIZE);
+    memset(fileInfos[fileId], 0, INFO_SIZE * sizeof(int));
+
+    //find dir with file
+    char *dirname;
+    char *temp = strtok(name, "/");
+    while(temp != NULL) {
+        dirname = temp;
+        temp = strtok(NULL, "/");
+        if(strcmp(temp,filename) == 0)
+            break;
+    }
+    //find dir index
+    int dirIdx = 0;
+    for(;dirIdx < MAX_FILES; ++dirIdx)
+    {
+        if(strcmp(dirname, fileNames[dirIdx]) == 0)
+            break;
+    }
+    //rewrite dir
+
+    FILE *FS = fopen(FSAbsolutePath, "r+");
+    if (FS == NULL)
+        return 1;
+
+    //read parent dir
+    int dirSize = fileInfos[dirIdx][1] - sizeof(int);
+    int *buf = (int*)malloc(dirSize);
+    fseek(FS, fileInfos[dirIdx][0] + sizeof(int),SEEK_SET);
+    fread(buf, dirSize, 1, FS);
+
+    //find position of file to be removed
+    int i = 0;
+    while(buf[i] != fileId)
+        ++i;
+
+    //move rest of file to delete
+    memmove(buf+i, buf+i+1,dirSize - i - 1);
+
+    //save change to dir
+    fseek(FS, fileInfos[dirIdx][0] + sizeof(int),SEEK_SET);
+    fwrite(buf, dirSize - sizeof(int), 1,FS);
+    fileInfos[dirIdx][1] -= sizeof(int);
+
+    free(buf);
+
+    updateMemory();
+
+    //save changes to FS
+
+    updateMetadata(FS);
+
+    fclose(FS);
+//    if (mutex_unlock() != SFSQ_OK) {
+//        return SFS_UNLOCK_MUTEX_ERROR;
+//    }
+    return 0;
+
+
+}
+
+int simplefs_mkdir(char *name) {
+//    if (mutex_lock() != SFSQ_OK) {
+//        return SFS_LOCK_MUTEX_ERROR;
+//    }
+    char filename[NAME_SIZE];
+    int dirId = check_path(name, filename);
+    if (dirId >= -1)
+        //wrong path or file exists
+        return -1;
+
+    dirId = -1 * (dirId + 2);
+
+    if (strlen(filename) > NAME_SIZE || fileCount >= MAX_FILES || freeMemory < sizeof(int))
+        return -1;
+
+    //find free memory for file
+    struct inodeFree *temp = &head;
+
+    int i;
+    for (i = 0; i < MAX_FILES; i++) {
+        //find empty descriptor
+        if (fileInfos[i][1] == 0)
+            break;
+    }
+
+    //add dir to dir
+    int buf[1];
+    buf[0] = i;
+    internal_lseek(dirId, SEEK_SET, fileInfos[dirId][1]);
+    internal_write(dirId, (char *) buf, sizeof(int));
+
+    //file metadata
+    strcpy(fileNames[i], filename);
+    fileInfos[i][0] = temp->base;    //position
+    fileInfos[i][1] = sizeof(int);   //file length
+    fileInfos[i][2] = 1;             //directory
+    fileInfos[i][3] = 1;             //read permission
+    fileInfos[i][4] = 1;             //write permission
+
+    fileCount++;
+    updateMemory();
+    freeMemory -= sizeof(int);
+
+    //open FS file
+    FILE *FS = fopen(FSAbsolutePath, "r+");
+    if (FS == NULL)
+        return 1;
+
+    updateMetadata(FS);
+    fclose(FS);
+//    if (mutex_unlock() != SFSQ_OK) {
+//        return SFS_UNLOCK_MUTEX_ERROR;
+//    }
+    return 0;
+}
+
+
+
+
+int simplefs_ls(char name[]) {
+//    if (mutex_lock() != SFSQ_OK) {
+//        return SFS_LOCK_MUTEX_ERROR;
+//    }
+    char filename[NAME_SIZE];
+    if (check_path(name, filename) < 0 && strcmp(name, fileNames[0]) != 0) { //name = path
+//        if (mutex_unlock() != SFSQ_OK) {
+//            return SFS_UNLOCK_MUTEX_ERROR;
+//        }
+        return -1;
+    }
+    else if(strcmp(name, fileNames[0]) == 0)
+    {//dir is root
+        strcpy(filename, fileNames[0]);
+    }
+
+    //strcpy(filename, name); //name = filename
+    for (int i = 0; i < fileCount; ++i) {
+        if (strcmp(filename, fileNames[i]) == 0) {
+            char *buf = (char*)malloc(fileInfos[i][1]-sizeof(int));
+            internal_lseek(i, SEEK_SET, sizeof(int));
+            internal_read(i, buf, fileInfos[i][1]-sizeof(int));
+
+            //first byte is just flag, not id
+            int *bufI = (int*)malloc(fileInfos[i][1]-sizeof(int));
+            memcpy(bufI, buf, fileInfos[i][1]-sizeof(int));
+            for (int j = 0; j < fileInfos[i][1]/sizeof(int)-1; ++j) {
+                printf("%s \n", fileNames[bufI[j]]);
+            }
+
+            free(buf);
+            free(bufI);
+//            if (mutex_unlock() != SFSQ_OK) {
+//                return SFS_UNLOCK_MUTEX_ERROR;
+//            }
+            return 0;
+        }
+    }
+    //directory not found
+//    if (mutex_unlock() != SFSQ_OK) {
+//        return SFS_UNLOCK_MUTEX_ERROR;
+//    }
+    return -1;
+}
+
+
 
 #endif //FS_H
