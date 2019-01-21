@@ -858,6 +858,9 @@ int simplefs_unlink(char *name) {
     int fileId = check_path(name, filename);
     if (fileId <= 0 || (fileInfos[fileId][2] == 1 && fileInfos[fileId][1] != sizeof(int))) {
         //no file or file is non-empty dir
+        if (mutex_unlock() != SFSQ_OK) {
+            return SFS_UNLOCK_MUTEX_ERROR;
+        }
         return -1;
     }
 

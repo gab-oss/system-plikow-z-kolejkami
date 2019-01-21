@@ -125,14 +125,14 @@ void run_tests(char* fname, char no_creat)
 void run_open_tests()
 {
     //OPEN
-//    printf("Test open non existing file: \n Mode FS_RDONLY: ");
-//    int fd = simplefs_open("./zzz", FS_RDONLY);
-//    if( fd < 0 )
-//        print_green("[OK]");
-//    else
-//        print_red("Failed! Expected error return value!");
+    printf("Test open non existing file: \n Mode FS_RDONLY: ");
+    int fd = simplefs_open("./zzz", FS_RDONLY);
+    if( fd < 0 )
+        print_green("[OK]");
+    else
+        print_red("Failed! Expected error return value!");
     printf("\nMode FS_WRONLY: ");
-    int     fd = simplefs_open("./zzz", FS_RDONLY);
+    fd = simplefs_open("./zzz", FS_RDONLY);
     if( fd < 0 )
         print_green("[OK]");
     else 
@@ -147,16 +147,16 @@ void run_open_tests()
 
 void run_remove_tests()
 {
-//    printf("Test remove non existing file: \n");
-//    int r = simplefs_unlink("./sss");
-//    if( r < 0 )
-//        print_green("[OK]");
-//    else
-//        print_red("Failed! Expected error return value!\n");
+    printf("Test remove non existing file: \n");
+    int r = simplefs_unlink("./sss");
+    if( r < 0 )
+        print_green("[OK]");
+    else
+        print_red("Failed! Expected error return value!\n");
     
     printf("Remove existing file: ");
     simplefs_creat("./abc", FS_RDWR);
-    int r = simplefs_unlink("./abc");
+    r = simplefs_unlink("./abc");
     if(r == 0)
         print_green("[OK]");
     else
