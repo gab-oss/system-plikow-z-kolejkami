@@ -82,7 +82,7 @@ int lock_file(int fd) {
 
 /*
  */
-int unlock_file(int fd) {
+int access_file(int fd) {
     key_t key = ftok(SFS_QUEUE_KEY, 65);
     int qid = msgget(key, 0666 | IPC_CREAT);
     if (qid < 0) {
@@ -96,6 +96,20 @@ int unlock_file(int fd) {
     if(errno != ENOMSG && message.pid != getpid()){
         msgsnd(qid, &message, sizeof(message), MSG_NOERROR);
         return SFSQ_FILE_LOCKED_ERROR;
+    }
+    return SFSQ_OK;
+}
+
+int unlock_file(int fd) {
+    key_t key = ftok(SFS_QUEUE_KEY, 65);
+    int qid = msgget(key, 0666 | IPC_CREAT);
+    if (qid < 0) {
+        return SFSQ_MSGGET_ERROR;
+    }
+    struct sfs_msg message;
+    ssize_t ret = msgrcv(qid, &message, sizeof(message), fd + MAX_FILES + 1, IPC_NOWAIT);
+    if (ret < 0 && errno != ENOMSG) {
+        return SFSQ_MSGRCV_ERROR;
     }
     return SFSQ_OK;
 }
@@ -674,7 +688,7 @@ int simplefs_write(int fd, char *buf, int len) {
     if (mutex_lock_file(fd) != SFSQ_OK) {
         return SFS_LOCK_MUTEX_ERROR;
     }
-    int unlock_file_ret = unlock_file(fd);
+    int unlock_file_ret = access_file(fd);
     if(unlock_file_ret == SFSQ_FILE_LOCKED_ERROR){
         if (mutex_unlock_file(fd) != SFSQ_OK) {
             return SFS_UNLOCK_MUTEX_ERROR;
@@ -708,9 +722,9 @@ int simplefs_lseek(int fd, int whence, int offset) {
 
 
 int simplefs_close(int fd) {
-//    if (unlock_file(fd) != SFSQ_OK) {
-//        return SFS_UNLOCK_FILE_ERROR;
-//    }
+    if (unlock_file(fd) != SFSQ_OK) {
+        return SFS_UNLOCK_FILE_ERROR;
+    }
     return 0;
 }
 
@@ -765,9 +779,9 @@ int simplefs_mount(char *name, int size) {
     strcpy(FSAbsolutePath, name);
     //check if enough space for metadata and first file
     if (size < METADATA_SIZE + sizeof(int)) {
-//        if (mutex_unlock() != SFSQ_OK) {
-//            return SFS_UNLOCK_MUTEX_ERROR;
-//        }
+        if (mutex_unlock() != SFSQ_OK) {
+            return SFS_UNLOCK_MUTEX_ERROR;
+        }
         return -1;
     }
 
@@ -813,7 +827,7 @@ int simplefs_open(char *name, int mode) {
     }
     posInFile[fileId] = 0; //set postion if file to 0
     if (fileInfos[fileId][4] && (mode == FS_WRONLY || mode == FS_RDWR)) {
-        int unlock_file_ret = unlock_file(fileId);
+        int unlock_file_ret = access_file(fileId);
         if(unlock_file_ret == SFSQ_FILE_LOCKED_ERROR){
             if (mutex_unlock() != SFSQ_OK) {
                 return SFS_UNLOCK_MUTEX_ERROR;
@@ -836,11 +850,10 @@ int simplefs_open(char *name, int mode) {
 
 
 
-//TODO: mutexy
 int simplefs_unlink(char *name) {
-//    if (mutex_lock() != SFSQ_OK) {
-//        return SFS_LOCK_MUTEX_ERROR;
-//    }
+    if (mutex_lock() != SFSQ_OK) {
+        return SFS_LOCK_MUTEX_ERROR;
+    }
     char filename[NAME_SIZE];
     int fileId = check_path(name, filename);
     if (fileId <= 0 || (fileInfos[fileId][2] == 1 && fileInfos[fileId][1] != sizeof(int))) {
@@ -904,18 +917,18 @@ int simplefs_unlink(char *name) {
     updateMetadata(FS);
 
     fclose(FS);
-//    if (mutex_unlock() != SFSQ_OK) {
-//        return SFS_UNLOCK_MUTEX_ERROR;
-//    }
+    if (mutex_unlock() != SFSQ_OK) {
+        return SFS_UNLOCK_MUTEX_ERROR;
+    }
     return 0;
 
 
 }
 
 int simplefs_mkdir(char *name) {
-//    if (mutex_lock() != SFSQ_OK) {
-//        return SFS_LOCK_MUTEX_ERROR;
-//    }
+    if (mutex_lock() != SFSQ_OK) {
+        return SFS_LOCK_MUTEX_ERROR;
+    }
     char filename[NAME_SIZE];
     int dirId = check_path(name, filename);
     if (dirId >= -1)
@@ -962,9 +975,9 @@ int simplefs_mkdir(char *name) {
 
     updateMetadata(FS);
     fclose(FS);
-//    if (mutex_unlock() != SFSQ_OK) {
-//        return SFS_UNLOCK_MUTEX_ERROR;
-//    }
+    if (mutex_unlock() != SFSQ_OK) {
+        return SFS_UNLOCK_MUTEX_ERROR;
+    }
     return 0;
 }
 
@@ -972,14 +985,14 @@ int simplefs_mkdir(char *name) {
 
 
 int simplefs_ls(char name[]) {
-//    if (mutex_lock() != SFSQ_OK) {
-//        return SFS_LOCK_MUTEX_ERROR;
-//    }
+    if (mutex_lock() != SFSQ_OK) {
+        return SFS_LOCK_MUTEX_ERROR;
+    }
     char filename[NAME_SIZE];
     if (check_path(name, filename) < 0 && strcmp(name, fileNames[0]) != 0) { //name = path
-//        if (mutex_unlock() != SFSQ_OK) {
-//            return SFS_UNLOCK_MUTEX_ERROR;
-//        }
+        if (mutex_unlock() != SFSQ_OK) {
+            return SFS_UNLOCK_MUTEX_ERROR;
+        }
         return -1;
     }
     else if(strcmp(name, fileNames[0]) == 0)
@@ -1003,16 +1016,16 @@ int simplefs_ls(char name[]) {
 
             free(buf);
             free(bufI);
-//            if (mutex_unlock() != SFSQ_OK) {
-//                return SFS_UNLOCK_MUTEX_ERROR;
-//            }
+            if (mutex_unlock() != SFSQ_OK) {
+                return SFS_UNLOCK_MUTEX_ERROR;
+            }
             return 0;
         }
     }
     //directory not found
-//    if (mutex_unlock() != SFSQ_OK) {
-//        return SFS_UNLOCK_MUTEX_ERROR;
-//    }
+    if (mutex_unlock() != SFSQ_OK) {
+        return SFS_UNLOCK_MUTEX_ERROR;
+    }
     return -1;
 }
 
