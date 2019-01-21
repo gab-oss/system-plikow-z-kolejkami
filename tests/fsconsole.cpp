@@ -73,11 +73,13 @@ int main(int argc, char** argv)
                 cout<<"Counldn't open "<<cmd_parts[1] << " error: "<<fd;
                 continue;
             }
+            sleep(10);
             string line = cmd_parts[2];
             for(int i=3; i<cmd_parts.size();++i)
                 line+=" "+cmd_parts[i];
-            if(simplefs_write(fd, (char*)line.c_str(), line.size()) < 0)    
-                cout<<"Write error";
+            int ret = simplefs_write(fd, (char*)line.c_str(), line.size());
+            if(ret < 0)
+                cout<<"Write error"<< "error: " << ret;
             simplefs_close(fd);
         }
 
