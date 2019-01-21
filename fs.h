@@ -872,9 +872,18 @@ int simplefs_unlink(char *name) {
         return -1;
     }
 
-    if(fileInfos[fileId][2] != 0 && fileInfos[fileId][4]) {
+    if(fileInfos[fileId][2] == 0 && fileInfos[fileId][4]) {
         int ret = access_file(fileId);
+        if(ret == SFSQ_FILE_LOCKED_ERROR){
+            if (mutex_unlock() != SFSQ_OK) {
+                return SFS_UNLOCK_MUTEX_ERROR;
+            }
+            return SFS_FILE_LOCKED_ERROR;
+        }
         if(ret != SFSQ_OK){
+            if (mutex_unlock() != SFSQ_OK) {
+                return SFS_UNLOCK_MUTEX_ERROR;
+            }
             return SFS_UNLOCK_FILE_ERROR;
         }
     }
