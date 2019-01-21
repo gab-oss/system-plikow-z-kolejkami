@@ -1029,7 +1029,7 @@ int simplefs_ls(char name[]) {
             int *bufI = (int*)malloc(fileInfos[i][1]-sizeof(int));
             memcpy(bufI, buf, fileInfos[i][1]-sizeof(int));
             for (int j = 0; j < fileInfos[i][1]/sizeof(int)-1; ++j) {
-                printf("%s \n", fileNames[bufI[j]]);
+                printf("\n%s", fileNames[bufI[j]]);
             }
 
             free(buf);

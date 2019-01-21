@@ -2,6 +2,7 @@
 #include <string>
 #include <climits>
 #include <stdio.h>
+#include <unordered_map>
 #include "StringSplitter.h"
 #include "../fs.h"
 
@@ -16,6 +17,7 @@ int main(int argc, char** argv)
     string input; // commandd read from cin
     string pwd ="./"; // working directory
     //simplefs_mount("/tmp/azx1.fs", 10000);
+    std::unordered_map<std::string, int> openFiles;
     while(true)
     {
         cout<<endl<<pwd<<PROMPT;
@@ -139,7 +141,65 @@ int main(int argc, char** argv)
              if(ls < 0 )
                 cout<<"LS Error: "<<ls;
         }   
-        
+        else if(cmd == "openw")
+        {
+            if(cmd_parts.size() < 2)
+            {
+                cout<<"Usage: openw <path>";
+                continue;
+            }
+            string path = pwd +cmd_parts[1];
+            int fd = simplefs_open((char *)path.c_str(), FS_WRONLY);
+            if( fd < 0){
+                cout<<"Couldn't open "<<cmd_parts[1]<<"error: "<<fd;
+                continue;
+            }
+            openFiles.insert({path, fd});
+        }
+
+        else if(cmd == "openr")
+        {
+            if(cmd_parts.size() < 2)
+            {
+                cout<<"Usage: openr <path>";
+                continue;
+            }
+            string path = pwd +cmd_parts[1];
+            int fd = simplefs_open((char*)path.c_str(),FS_RDONLY);
+            if( fd < 0){
+                cout<<"Couldn't open "<<cmd_parts[1]<<"error: "<<fd;
+                continue;
+            }
+            openFiles.insert({path, fd});
+        }
+        else if(cmd == "openrw")
+        {
+            if(cmd_parts.size() < 2)
+            {
+                cout<<"Usage: openrw <path>";
+                continue;
+            }
+            string path = pwd +cmd_parts[1];
+            int fd = simplefs_open((char*)path.c_str(), FS_RDWR);
+            if( fd < 0){
+                cout<<"Couldn't open "<<cmd_parts[1]<<"error: "<<fd;
+                continue;
+            }
+            openFiles.insert({path, fd});
+        }
+        else if( cmd == "fclose")
+        {
+            if(cmd_parts.size() < 2)
+            {
+                cout<<"Usage: fclose <path>";
+                continue;
+            }
+            string path = pwd +cmd_parts[1];
+            auto pfd = openFiles.find(path);
+            int fd = pfd->second;
+            simplefs_close(fd);
+            openFiles.erase(path);
+        }
         else if(cmd == "unmount")
         { // unmount <fs file path>
             if(cmd_parts.size() < 2)
