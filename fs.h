@@ -183,6 +183,15 @@ int mutex_unlock() {
     return SFSQ_OK;
 }
 
+
+int queue_destroy() {
+    key_t key = ftok(SFS_QUEUE_KEY, 65);
+    int qid = msgctl(key, IPC_RMID, NULL);
+    if (qid < 0) {
+        return SFSQ_MSGDESTROY_ERROR;
+    }
+}
+
 /*
  * Initialises a message queue for simple fs management.
  * Returns SFSQ_OK if no errors occurred.
@@ -199,16 +208,6 @@ int queue_init() {
     }
     return SFSQ_OK;
 }
-
-
-int queue_destroy() {
-    key_t key = ftok(SFS_QUEUE_KEY, 65);
-    int qid = msgctl(key, IPC_RMID, NULL);
-    if (qid < 0) {
-        return SFSQ_MSGDESTROY_ERROR;
-    }
-}
-
 
 
 // ========= MESSAGE MUTEX END ===========
@@ -637,11 +636,11 @@ int internal_creat(char *name, int mode){
 
     //file metadata
     strcpy(fileNames[i], filename);
-    fileInfos[i][0] = temp->base;    //position
-    fileInfos[i][1] = sizeof(int);   //file length
-    fileInfos[i][2] = 0;            //not a directory
-    fileInfos[i][3] = readPerm;        //read permission
-    fileInfos[i][4] = writePerm;    //write permission
+    fileInfos[i][0] = temp->base;       // position
+    fileInfos[i][1] = sizeof(int);      // file length
+    fileInfos[i][2] = 0;                // not a directory
+    fileInfos[i][3] = readPerm;         // read permission
+    fileInfos[i][4] = writePerm;        // write permission
 
     fileCount++;
     updateMemory();
@@ -1015,6 +1014,7 @@ int simplefs_ls(char name[]) {
     if (mutex_lock() != SFSQ_OK) {
         return SFS_LOCK_MUTEX_ERROR;
     }
+    readFS(FSAbsolutePath);
     char filename[NAME_SIZE];
     if (check_path(name, filename) < 0 && strcmp(name, fileNames[0]) != 0) { //name = path
         if (mutex_unlock() != SFSQ_OK) {
