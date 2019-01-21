@@ -423,6 +423,7 @@ int internal_write(int fd, char *buf, int len) {
             fileInfos[fd][1] += sizeinc;
 
             updateMemory();
+            updateMetadata(file);
             fclose(file);
             return wr;
         }
@@ -449,6 +450,7 @@ int internal_write(int fd, char *buf, int len) {
             posInFile[fd] += sizeof(char) * len;
 
             updateMemory();
+            updateMetadata(file);
             fclose(file);
             return wr;
         }
@@ -677,7 +679,9 @@ int simplefs_read(int fd, char *buf, int len) {
     if (mutex_lock_file(fd) != SFSQ_OK) {
         return SFS_LOCK_MUTEX_ERROR;
     }
+    readFS(FSAbsolutePath);
     int ret = internal_read(fd, buf, len);
+    updateMemory();
     if (mutex_unlock_file(fd) != SFSQ_OK) {
         return SFS_UNLOCK_MUTEX_ERROR;
     }
@@ -688,6 +692,7 @@ int simplefs_write(int fd, char *buf, int len) {
     if (mutex_lock_file(fd) != SFSQ_OK) {
         return SFS_LOCK_MUTEX_ERROR;
     }
+    readFS(FSAbsolutePath);
     int unlock_file_ret = access_file(fd);
     if(unlock_file_ret == SFSQ_FILE_LOCKED_ERROR){
         if (mutex_unlock_file(fd) != SFSQ_OK) {
@@ -713,7 +718,9 @@ int simplefs_lseek(int fd, int whence, int offset) {
     if (mutex_lock_file(fd) != SFSQ_OK) {
         return SFS_LOCK_MUTEX_ERROR;
     }
+    readFS(FSAbsolutePath);
     int ret = internal_lseek(fd, whence, offset);
+    updateMemory();
     if (mutex_unlock_file(fd) != SFSQ_OK) {
         return SFS_UNLOCK_MUTEX_ERROR;
     }
@@ -744,6 +751,7 @@ int simplefs_creat(char *name, int mode) {
     if (mutex_lock() != SFSQ_OK) {
         return SFS_LOCK_MUTEX_ERROR;
     }
+    readFS(FSAbsolutePath);
     int ret = 0;
     int fd = internal_creat(name, mode);
     if(fd >= 0) {
@@ -862,6 +870,13 @@ int simplefs_unlink(char *name) {
             return SFS_UNLOCK_MUTEX_ERROR;
         }
         return -1;
+    }
+
+    if(fileInfos[fileId][2] != 0 && fileInfos[fileId][4]) {
+        int ret = access_file(fileId);
+        if(ret != SFSQ_OK){
+            return SFS_UNLOCK_FILE_ERROR;
+        }
     }
 
     //clear filename and info of deleted file
