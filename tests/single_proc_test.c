@@ -147,43 +147,13 @@ void run_open_tests()
 
 void run_remove_tests()
 {
-    printf("Test remove non existing file: \n");
+    printf("Test remove file: \n");
     int r = simplefs_unlink("./sss");
     if( r < 0 )
         print_green("[OK]");
     else
         print_red("Failed! Expected error return value!\n");
-    
-    printf("Remove existing file: ");
-    simplefs_creat("./abc", FS_RDWR);
-    r = simplefs_unlink("./abc");
-    if(r == 0)
-        print_green("[OK]");
-    else
-    {
-        char msg[256];
-        sprintf(msg,"Failed! Expected 0 return value got %d\n", r);
-        print_red(msg);
-    }
-
-    printf("Try to remove non empty dir: ");
-    r = simplefs_unlink("./dir");
-    if( r < 0 )
-        print_green("[OK]");
-    else 
-        print_red("Failed! Expected error return value!\n");
-    
-    printf("Try to remove empty dir: ");
-    simplefs_mkdir("./d1");
-    r = simplefs_unlink("./d1");
-    if(r == 0)
-        print_green("[OK]");
-    else
-    {
-        char msg[256];
-        sprintf(msg,"Failed! Expected 0 return value got %d\n", r);
-        print_red(msg);
-    }
+        
 }
 
 int main(int argc, char **argv)
@@ -216,30 +186,6 @@ int main(int argc, char **argv)
     printf("***Unmounting FS***");
     simplefs_unmount(mount_path);
 
-    //RE-MOUNT
-    printf("\nRe-mounting FS in: %s, Size: %d", mount_path, fs_size);
-    r = simplefs_mount(mount_path, fs_size);
-    print_test_res(r, "Mount error! Exiting");
-    if(r < 0)
-        exit(-1);
-        
-    printf("\n***************************************\n");
-    printf("***    Run tests on remounted FS    ***");
-    printf("***************************************\n");
-    // Re-run test on FS mounted from existing file
-    printf("***Running tests in / directory***\n");
-    run_tests("./a.txt", TRUE);
-    
-    printf("***Running tests in / subdirectory***\n");
-    r = simplefs_mkdir("./dir");
-    print_test_res(r, "Couldn't create dieectory!");
-    run_tests("./dir/b.txt", TRUE);   
-
-    printf("***Running simplefs_open tests***\n");
-    run_open_tests();
-
-    printf("***Running simplefs_unlink tests***\n");
-    run_remove_tests();
     printf("Tests finished!\n");
 }
 

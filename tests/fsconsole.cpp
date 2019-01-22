@@ -221,8 +221,9 @@ int main(int argc, char** argv)
             }
             int size = stoi(cmd_parts[2]);
             // int inodes = stoi(cmd_parts[3]);
-            if(simplefs_mount((char*)cmd_parts[1].c_str(), size) < 0)
-                cout<<"Mount error";
+            int r = simplefs_mount((char*)cmd_parts[1].c_str(), size);
+            if(r <0)
+                cout<<"Mount error: "<<r;
         }
         
         else if(cmd == "cd")
